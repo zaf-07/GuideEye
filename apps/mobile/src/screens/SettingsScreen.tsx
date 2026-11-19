@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, StyleSheet, Switch, TextInput, View } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import * as Location from 'expo-location';
 import { Button, Chip, Display, GlassCard, RoundButton, Screen, Text } from '../components';
 import { apiJson, apiUrl, devHostApiUrl, loadApiUrl, probeApi, setApiUrl } from '../api';
 import { onSyncHealth, remoteStatus, syncHealth, type SyncHealth } from '../memory';
@@ -278,6 +279,18 @@ export function SettingsScreen() {
           caption="High-contrast text for everything spoken."
           value={profile.captions}
           onChange={(v) => patch({ captions: v })}
+        />
+      </GlassCard>
+
+      <GlassCard>
+        <Row
+          title="Find nearby GuideEye users"
+          caption="While the app is open, another GuideEye user close to you can be offered a conversation. Neither of you sees who the other is until you both connect. Your location is used only to check distance and is not stored."
+          value={profile.nearbyDiscovery}
+          onChange={(v) => {
+            void patch({ nearbyDiscovery: v });
+            if (v) Location.requestForegroundPermissionsAsync().catch(() => {});
+          }}
         />
       </GlassCard>
 

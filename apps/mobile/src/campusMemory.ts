@@ -1,6 +1,14 @@
 import { getApiUrl } from './vision';
 import { getSightDeviceId, getSightHeaders, getSightSessionId } from './sightIdentity';
 import type { LocalDetection } from './detector.types';
+import {
+  isPeerBridge,
+  peerBridgeActive,
+  peerConversation,
+  peerMessagesAfter,
+  sendPeerMessage,
+  type PeerInboxMessage,
+} from './nearby/peerBridge';
 
 export type CampusAlert = {
   id: number;
@@ -472,7 +480,7 @@ async function bridgeRequest<T>(path: string, init: RequestInit = {}): Promise<T
 }
 
 export function bridgeServerConfigured(): boolean {
-  return Boolean(getApiUrl());
+  return Boolean(getApiUrl()) || peerBridgeActive();
 }
 
 export function createBridgeConversation(): Promise<BridgeConversation> {
@@ -480,10 +488,12 @@ export function createBridgeConversation(): Promise<BridgeConversation> {
 }
 
 export function joinBridgeConversation(code: string): Promise<BridgeConversation> {
+  if (isPeerBridge(code)) return Promise.resolve(peerConversation(code));
   return bridgeRequest<BridgeConversation>(`/v1/bridge/conversations/${encodeURIComponent(code)}/join`, { method: 'POST' });
 }
 
 export function getBridgeConversation(code: string): Promise<BridgeConversation> {
+  if (isPeerBridge(code)) return Promise.resolve(peerConversation(code));
   return bridgeRequest<BridgeConversation>(`/v1/bridge/conversations/${encodeURIComponent(code)}`);
 }
 
@@ -519,7 +529,24 @@ function newClientId() {
   return `${getSightDeviceId().slice(0, 24)}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function peerMessage(code: string, item: PeerInboxMessage): BridgeMessage {
+  return {
+    id: item.id, session_id: code, sender_role: item.sender_role, text: item.text, client_id: item.client_id,
+    from_this_device: item.from_this_device, created_at: item.created_at, relative_time: 'just now', pending: false,
+  };
+}
+
 async function deliver(code: string, message: BridgeMessage): Promise<BridgeMessage> {
+  if (isPeerBridge(code)) {
+    const sentToPeer = sendPeerMessage({
+      sender_role: message.sender_role, text: message.text,
+      client_id: message.client_id || newClientId(), created_at: message.created_at,
+    });
+    if (!sentToPeer) throw new Error('The nearby partner is not connected');
+    const delivered = peerMessage(code, sentToPeer);
+    storeBridgeMessages(code, [delivered]);
+    return delivered;
+  }
   const sent = await bridgeRequest<BridgeMessage>('/v1/bridge/message', {
     method: 'POST',
     body: JSON.stringify({
@@ -573,6 +600,11 @@ export async function flushBridgeOutbox(code: string): Promise<BridgeMessage[]> 
 
 /** Newest messages from the server, or only those after afterId. Throws when offline. */
 export async function fetchBridgeMessages(code: string, afterId?: number): Promise<BridgeMessage[]> {
+  if (isPeerBridge(code)) {
+    const fromPeer = peerMessagesAfter(afterId ?? 0).map((item) => peerMessage(code, item));
+    storeBridgeMessages(code, fromPeer);
+    return fromPeer;
+  }
   const query = afterId != null && afterId > 0 ? `&after_id=${afterId}` : '';
   const messages = await bridgeRequest<BridgeMessage[]>(
     `/v1/bridge/messages?session_id=${encodeURIComponent(code)}${query}&limit=50`,
