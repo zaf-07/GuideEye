@@ -94,7 +94,41 @@ const CONTENT = {
   },
 } as const;
 
-export function HomeScreen() {
+/**
+ * Which part of the old single-scroll home this render is responsible for.
+ * The sections themselves are unchanged — the tab layout just asks for one at
+ * a time instead of stacking all of them in a single scroll view.
+ */
+export type HomeSection = 'home' | 'vision' | 'hearing' | 'connect';
+
+/** The accent word and the line under the headline, per tab. */
+const SECTION_ACCENT: Record<HomeSection, string> = {
+  home: 'for everyone',
+  vision: 'for your eyes',
+  hearing: 'for your ears',
+  connect: 'between you both',
+};
+const SECTION_SUB: Record<HomeSection, string> = {
+  home: 'Choose where you want to go:',
+  vision: 'Pocket assistant and walking navigation.',
+  hearing: 'Sign avatar, large captions and sign reading.',
+  connect: 'One device, two people, both directions.',
+};
+
+/** The cards on the home tab, each a door to one of the other tabs. */
+const OVERVIEW: {
+  tab: '/main/vision' | '/main/hearing' | '/main/connect';
+  icon: keyof typeof Ionicons.glyphMap;
+  tint: string;
+  title: string;
+  desc: string;
+}[] = [
+  { tab: '/main/vision', icon: 'eye', tint: colors.lime, title: 'Blind or Low Vision', desc: 'Pocket assistant, obstacles and turn-by-turn walking' },
+  { tab: '/main/hearing', icon: 'hand-left', tint: '#5BE1F0', title: 'Deaf or Hard of Hearing', desc: '3D sign avatar, large captions, read my signs' },
+  { tab: '/main/connect', icon: 'swap-horizontal', tint: '#C9A7FF', title: 'Conversation Bridge', desc: 'Deaf signs in, blind hears it — and back again' },
+];
+
+export function HomeScreen({ section = 'home' }: { section?: HomeSection } = {}) {
   const { profile } = useProfile();
   const [detectorReady, setDetectorReady] = useState(false);
   const [lang, setLang] = useState<'en' | 'ru'>('en');
@@ -165,10 +199,10 @@ export function HomeScreen() {
   };
 
   return (
-    <Screen>
+    <Screen underTabBar>
       <GreetingBar
         name={t.userName(profile.displayName || '')}
-        onSettings={() => router.push('/settings')}
+        onSettings={() => router.navigate('/main/settings')}
       />
 
       {/* AI Status & Language Row */}
@@ -191,15 +225,44 @@ export function HomeScreen() {
       </View>
 
       <View style={styles.headerBlock}>
-        <Display lead={t.headlineLead} accent={t.headlineAccent} />
+        <Display lead={t.headlineLead} accent={SECTION_ACCENT[section] ?? t.headlineAccent} />
         <Text variant="body" muted style={{ marginTop: 2 }}>
-          {t.headlineSub}
+          {SECTION_SUB[section] ?? t.headlineSub}
         </Text>
       </View>
+
+      {/* The home tab is a way in to the others, not a copy of them. */}
+      {section === 'home' ? (
+        <View style={styles.overviewGrid}>
+          {OVERVIEW.map((entry) => (
+            <Pressable
+              key={entry.tab}
+              onPress={() => {
+                Haptics.selectionAsync().catch(() => {});
+                router.navigate(entry.tab);
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={`${entry.title}. ${entry.desc}`}
+              style={({ pressed }) => [styles.overviewCard, pressed && styles.cardPressed]}
+            >
+              <View style={[styles.overviewIcon, { backgroundColor: entry.tint }]}>
+                <Ionicons name={entry.icon} size={22} color={colors.onLight} />
+              </View>
+              <Text variant="section" color={colors.text} style={styles.overviewTitle}>
+                {entry.title}
+              </Text>
+              <Text variant="caption" muted style={styles.overviewDesc}>
+                {entry.desc}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
 
       {/* ========================================================================= */}
       {/* MODE 1: BLIND / LOW VISION (CHEST POCKET ASSISTANT)                       */}
       {/* ========================================================================= */}
+      {section === 'vision' ? (
       <View style={styles.modeSection}>
         <Pressable
           onPress={openBlindMode}
@@ -272,10 +335,12 @@ export function HomeScreen() {
           </View>
         </Pressable>
       </View>
+      ) : null}
 
       {/* ========================================================================= */}
       {/* MODE 2: DEAF & HARD OF HEARING (3D AVATAR OR SUBTITLES)                   */}
       {/* ========================================================================= */}
+      {section === 'hearing' ? (
       <View style={[styles.modeSection, { marginTop: spacing.lg }]}>
         <View style={styles.deafCard}>
           <View style={styles.cardHeaderRow}>
@@ -361,10 +426,12 @@ export function HomeScreen() {
           </Pressable>
         </View>
       </View>
+      ) : null}
 
       {/* ========================================================================= */}
       {/* BRIDGE: BLIND <-> DEAF CONVERSATION (ONE DEVICE OR P2P)                   */}
       {/* ========================================================================= */}
+      {section === 'connect' ? (
       <View style={[styles.modeSection, { marginTop: spacing.lg }]}>
         <Pressable
           onPress={openBridge}
@@ -398,10 +465,12 @@ export function HomeScreen() {
           </View>
         </Pressable>
       </View>
+      ) : null}
 
       {/* ========================================================================= */}
       {/* ALS / MOTOR PREVIEW BADGE                                                 */}
       {/* ========================================================================= */}
+      {section === 'home' ? (
       <View style={styles.alsContainer}>
         <GlassCard style={styles.alsCard}>
           <View style={styles.alsRow}>
@@ -416,11 +485,31 @@ export function HomeScreen() {
           </View>
         </GlassCard>
       </View>
+      ) : null}
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
+  overviewGrid: { gap: spacing.sm, marginTop: spacing.xs },
+  overviewCard: {
+    backgroundColor: colors.glass,
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    gap: 6,
+  },
+  overviewIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 2,
+  },
+  overviewTitle: { marginTop: 2 },
+  overviewDesc: { lineHeight: 18 },
   statusRowContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',

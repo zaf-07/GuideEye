@@ -52,7 +52,7 @@ export function SettingsScreen() {
     );
 
   return (
-    <Screen>
+    <Screen underTabBar>
       <View style={styles.bar}>
         <RoundButton icon="chevron-back" label="Back" onPress={() => router.back()} />
       </View>
