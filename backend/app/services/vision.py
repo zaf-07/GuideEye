@@ -15,6 +15,7 @@ import base64
 import os
 import sys
 import threading
+import time
 from io import BytesIO
 from pathlib import Path
 
@@ -29,6 +30,7 @@ HAZARD_LABELS = {
 }
 MIN_HAZARD_AREA = 0.03  # fraction of the frame
 MAX_WARNINGS = 3
+RETRY_SECONDS = 30
 
 SYSTEM_PROMPT = (
     'You are GuideBand, speaking through a wearable to a blind or low-vision person. '
@@ -136,6 +138,7 @@ class Detector:
     def __init__(self) -> None:
         self._model = None
         self._error: str | None = None
+        self._failed_at = 0.0
         self._lock = threading.Lock()
 
     @staticmethod
@@ -150,15 +153,20 @@ class Detector:
         return str(bundled)
 
     def _load(self):
-        if self._model is None and self._error is None:
-            if setting('ENABLED', 'true').lower() in {'0', 'false', 'no'}:
-                self._error = 'disabled by ULTRALYTICS_YOLO_ENABLED'
-                return None
-            try:
-                from ultralytics import YOLO
-                self._model = YOLO(self._weights())
-            except Exception as error:  # missing package, bad weights, no network
-                self._error = f'{type(error).__name__}: {error}'
+        if self._model is not None:
+            return self._model
+        if setting('ENABLED', 'true').lower() in {'0', 'false', 'no'}:
+            self._error = 'disabled by ULTRALYTICS_YOLO_ENABLED'
+            return None
+        if self._error and time.monotonic() - self._failed_at < RETRY_SECONDS:
+            return None
+        try:
+            from ultralytics import YOLO
+            self._model = YOLO(self._weights())
+            self._error = None
+        except Exception as error:
+            self._error = f'{type(error).__name__}: {error}'
+            self._failed_at = time.monotonic()
         return self._model
 
     def status(self) -> dict:
