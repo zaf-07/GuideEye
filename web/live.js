@@ -24,7 +24,35 @@
     return response.json();
   }
 
-  async function checkService() {
+  // Where the service might be, best guess first. A saved address wins, but a
+  // stale one — left over from testing against another port — must not strand
+  // the page offline when the service is right there on the origin that served
+  // it, so every candidate is tried before giving up.
+  function apiCandidates() {
+    const list = [];
+    if (api) list.push(api);
+    if (location.protocol === 'http:' || location.protocol === 'https:') list.push('');
+    list.push('http://localhost:8000');
+    return [...new Set(list)];
+  }
+
+  async function resolveApi() {
+    for (const candidate of apiCandidates()) {
+      try {
+        const response = await fetch(candidate + '/health', { cache: 'no-store' });
+        if (!response.ok) continue;
+        if (candidate !== api) {
+          api = candidate;
+          store.set('guideband_api', api);
+          el('apiInput').value = api || location.origin;
+        }
+        return true;
+      } catch { /* try the next one */ }
+    }
+    return false;
+  }
+
+  async function checkService(retried = false) {
     try {
       const s = await call('/system/status');
       const map = await call('/maps/config').catch(() => ({ embed_key: '' }));
@@ -51,6 +79,9 @@
       }
       el('qrLink').href = api + '/pay/qr.png?item=Coffee&amount=4.50';
     } catch {
+      // The address we tried is wrong or dead. Look for the service elsewhere
+      // once, then report honestly if it really is not running.
+      if (!retried && await resolveApi()) return checkService(true);
       online = false;
       el('liveStatus').textContent = 'Not connected to the GuideBand service';
       el('liveDot').className = 'dot dot-bad';
