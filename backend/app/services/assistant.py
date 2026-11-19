@@ -155,6 +155,9 @@ ERRAND = re.compile(
     r"\b(?:letter|document|paperwork|form|invoice|bill|statement|discharge|prescription|contract|lease"
     r"|lab (?:result|chart|report)s?|test results?|visit (?:note|summary)|doctor'?s? note)\b"
     r"|\b(?:look up|research|find out)\b|\berrand\b"
+    r"|\b(?:explain|summari[sz]e|summary)\b|\bhelp me understand\b"
+    r"|\bwhat (?:do|should|must) i (?:need to |have to )?do\b|\bwhat does (?:this|that|it) (?:mean|ask|want)\b"
+    r"|\btell me what (?:to do|i (?:need|have) to do|(?:this|that|it) (?:means|asks|wants))\b"
 )
 ERRAND_STATUS = re.compile(r"\berrand\b|\b(?:is it|is that|are you) (?:ready|done|finished)\b|\bany (?:update|news)\b|\bstill working\b")
 ERRAND_ASKS = re.compile(r"should i go ahead\?\s*$", re.IGNORECASE)
