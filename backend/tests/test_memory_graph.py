@@ -156,30 +156,55 @@ class SupermemoryTests(unittest.TestCase):
         self.assertEqual(len(self.memory.notes()), 1)
         self.assertEqual(self.memory.remote_errors, 1)
 
-    def test_requests_stay_local_by_default_but_are_counted(self):
-        # Skipping must be visible: a silent drop is indistinguishable from a
-        # broken key when requests are the only notes being written.
+    def test_requests_are_synced_by_default(self):
+        # They are most of what GuideBand knows; holding them back left the
+        # long-term memory permanently empty.
         async def scenario():
             with mock.patch.dict('os.environ', {'SUPERMEMORY_API_KEY': 'test-key'}):
-                with mock.patch.object(supermemory, 'remember') as remember:
-                    self.memory.add_note('asked', 'I asked for a coffee.')
-                    await self.memory.flush()
-                    remember.assert_not_called()
-        asyncio.run(scenario())
-        status = self.memory.remote_status()
-        self.assertEqual(status['skipped_requests'], 1)
-        self.assertFalse(status['mirrors_requests'])
-
-    def test_requests_are_mirrored_when_asked_for(self):
-        async def scenario():
-            with mock.patch.dict('os.environ', {'SUPERMEMORY_API_KEY': 'test-key',
-                                                'SUPERMEMORY_MIRROR_REQUESTS': 'true'}):
                 with mock.patch.object(supermemory, 'remember') as remember:
                     self.memory.add_note('asked', 'I asked for a coffee.')
                     await self.memory.flush()
                     remember.assert_called_once()
         asyncio.run(scenario())
         self.assertEqual(self.memory.remote_status()['skipped_requests'], 0)
+
+    def test_requests_can_be_kept_local_and_are_counted(self):
+        # Skipping must stay visible: a silent drop is indistinguishable from a
+        # broken key when requests are the only notes being written.
+        async def scenario():
+            with mock.patch.dict('os.environ', {'SUPERMEMORY_API_KEY': 'test-key',
+                                                'SUPERMEMORY_MIRROR_REQUESTS': 'false'}):
+                with mock.patch.object(supermemory, 'remember') as remember:
+                    self.memory.add_note('asked', 'I asked for a coffee.')
+                    await self.memory.flush()
+                    remember.assert_not_called()
+        asyncio.run(scenario())
+        with mock.patch.dict('os.environ', {'SUPERMEMORY_MIRROR_REQUESTS': 'false'}):
+            status = self.memory.remote_status()
+        self.assertEqual(status['skipped_requests'], 1)
+        self.assertFalse(status['mirrors_requests'])
+
+    def test_backfill_sends_everything_already_stored(self):
+        # Notes written before a key was configured never left the device.
+        self.memory.add_note('snapshot', 'A mug is on the desk.')
+        self.memory.add_note('asked', 'I asked about the weather.')
+        async def scenario():
+            with mock.patch.dict('os.environ', {'SUPERMEMORY_API_KEY': 'test-key'}):
+                with mock.patch.object(supermemory, 'remember') as remember:
+                    result = await self.memory.sync_all()
+                    self.assertEqual(remember.call_count, 2)
+                    return result
+        result = asyncio.run(scenario())
+        self.assertEqual(result['sent'], 2)
+        self.assertEqual(result['failed'], 0)
+
+    def test_backfill_is_a_no_op_without_a_key(self):
+        import os
+        env = {k: v for k, v in os.environ.items() if k != 'SUPERMEMORY_API_KEY'}
+        with mock.patch.dict('os.environ', env, clear=True):
+            result = asyncio.run(self.memory.sync_all())
+        self.assertFalse(result['configured'])
+        self.assertEqual(result['sent'], 0)
 
     def test_counts_what_actually_synced(self):
         async def scenario():

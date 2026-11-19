@@ -184,6 +184,11 @@ def memory_list():
     return {'notes': memory.notes(), 'objects': memory.sightings(), 'path_points': len(memory.path()),
             'connections': graph['edges'], 'stores_media': False, 'supermemory': memory.remote_status()}
 
+@app.post('/memory/sync')
+async def memory_sync():
+    """Push every stored note to Supermemory, including ones written before it was set up."""
+    return await memory.sync_all()
+
 @app.post('/memory/reindex')
 def memory_reindex():
     """Rebuild the relationship graph from the notes already stored."""

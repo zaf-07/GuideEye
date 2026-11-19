@@ -23,8 +23,14 @@ log = logging.getLogger(__name__)
 
 
 def _mirror_requests() -> bool:
-    """Whether the wearer's own spoken requests are synced, not just what was seen."""
-    return os.getenv('SUPERMEMORY_MIRROR_REQUESTS', '').strip().lower() in {'1', 'true', 'yes', 'on'}
+    """Whether the wearer's own spoken requests are synced, not just what was seen.
+
+    On by default. What someone says to GuideBand is most of what it knows —
+    with no vision key there is nothing else — so holding requests back left
+    the long-term memory permanently empty. Set SUPERMEMORY_MIRROR_REQUESTS=false
+    to keep them on the device instead.
+    """
+    return os.getenv('SUPERMEMORY_MIRROR_REQUESTS', 'true').strip().lower() not in {'0', 'false', 'no', 'off'}
 
 RECALL_PROMPT = (
     'You are GuideBand, the memory of a blind or low-vision person, speaking aloud. '
@@ -250,10 +256,8 @@ class Memory:
         """Fire the Supermemory write off in the background and forget about it."""
         if not supermemory.configured():
             return
-        # The log of spoken requests is the wearer's own words, so it stays on
-        # the device unless they ask for it to be synced. Counted either way:
-        # silently dropping every note is indistinguishable from a broken key,
-        # and that is exactly how it looks when nothing else is being written.
+        # Counted when held back: silently dropping every note is
+        # indistinguishable from a broken key.
         if kind == 'asked' and not _mirror_requests():
             self.skipped_requests += 1
             return
@@ -272,6 +276,36 @@ class Memory:
         except supermemory.SupermemoryError as error:
             self.remote_errors += 1
             log.warning('Supermemory write failed, keeping the local note only: %s', error)
+
+    async def sync_all(self, limit: int = 1000) -> dict:
+        """Send every note already stored to Supermemory.
+
+        Mirroring only happens as notes are written, so anything recorded
+        before a key was configured — or while requests were being held back —
+        never left the device. This pushes the backlog, oldest first so the
+        extractor sees them in the order they happened.
+        """
+        if not supermemory.configured():
+            return {'configured': False, 'sent': 0, 'failed': 0, 'skipped': 0}
+        notes = list(reversed(self.notes(limit=limit)))
+        sent = failed = skipped = 0
+        for note in notes:
+            if note['kind'] == 'asked' and not _mirror_requests():
+                skipped += 1
+                continue
+            try:
+                await supermemory.remember(
+                    note['text'], kind=note['kind'], when=note['created'],
+                    triples=graph.extract(note['text']),
+                )
+                sent += 1
+                self.mirrored += 1
+            except supermemory.SupermemoryError as error:
+                failed += 1
+                self.remote_errors += 1
+                log.warning('Supermemory backfill failed for note %s: %s', note['id'], error)
+        return {'configured': True, 'sent': sent, 'failed': failed, 'skipped': skipped,
+                'namespace': supermemory.namespace()}
 
     async def flush(self) -> None:
         """Wait for pending mirror writes. Used by tests and on shutdown."""
