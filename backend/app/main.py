@@ -70,7 +70,8 @@ async def read_image(image: UploadFile) -> bytes:
 
 async def detect(body: bytes) -> list[dict]:
     try:
-        return await asyncio.to_thread(vision.detector.detect, body)
+        detections = await asyncio.to_thread(vision.detector.detect, body)
+        return await asyncio.to_thread(vision.depth_estimator.annotate, body, detections)
     except vision.VisionError as error:
         raise HTTPException(422, str(error)) from error
 
@@ -83,11 +84,11 @@ def system_status():
     return {
         'wearable': band_view(),
         'modules': {'commands':'ready','journey':'demo','bridge':'ready','vision':vision.detector.status()['state']},
-        'vision': {'detector': vision.detector.status(), 'cloud_providers': vision.configured_providers(), 'model': llm.model()},
+        'vision': {'detector': vision.detector.status(), 'depth': vision.depth_estimator.status(), 'cloud_providers': vision.configured_providers(), 'model': llm.model()},
         'payments': {'mode': 'stripe_test' if is_test_key(stripe_key) else ('refused_live_key' if stripe_key else 'simulated'),
                      'menu': [{'item': name, 'price': money(cents)} for name, cents in CATALOGUE.values()]},
         'memory': {'notes': len(memory.notes(1000)), 'objects': len(memory.sightings()), 'path_points': len(memory.path())},
-        'navigation': {'maps': 'openstreetmap'},
+        'navigation': {'maps': 'google' if os.getenv('GOOGLE_MAPS_API_KEY') else 'openstreetmap'},
         'speech': {'voice': speech.provider() if speech.configured() else 'browser', 'transcription': speech.transcriber()},
         'messages': {'whatsapp': 'direct' if messaging.configured() else ('desktop_send' if messaging.desktop_enabled() else 'opens_whatsapp')},
     }

@@ -19,6 +19,15 @@ class VisionTests(unittest.TestCase):
             self.assertEqual(vision.Detector._weights(), 'custom-yolo.pt')
             self.assertEqual(vision.setting('DEVICE'), 'cpu')
 
+    def test_distance_is_only_kept_in_a_safe_metric_range(self):
+        item = det('chair', 0.2, 0.5)
+        vision.add_distance(item, 1.26)
+        self.assertEqual(item['distance_m'], 1.3)
+        self.assertIn('about 1.3 metres', vision.hazard_warnings([item])[0])
+        distant = det('car', 0.2, 0.8)
+        vision.add_distance(distant, 45)
+        self.assertNotIn('distance_m', distant)
+
     def test_zone_names_follow_horizontal_position(self):
         self.assertEqual(vision.zone(0.1), 'on the left')
         self.assertEqual(vision.zone(0.3), 'ahead, left')
