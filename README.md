@@ -92,6 +92,8 @@ pip install -r backend/requirements.txt -r backend/requirements-vision.txt
 python -m uvicorn backend.app.main:app --port 8000
 ```
 
+On Windows, double-clicking `run.bat` does the install, starts the service and opens the page.
+
 Open `http://localhost:8000/#demo` in Chrome, turn the camera on and ask: "What's in front of me?", "Remember this", "Where did I leave my keys?", "Buy me a coffee" and then "Yes".
 
 Set `GEMINI_API_KEY` in `backend/.env` first (see below). Without it, answers come from the on-device detector only. To charge a Stripe test card instead of simulating, set `STRIPE_SECRET_KEY` to an `sk_test_` or restricted `rk_test_` key.
