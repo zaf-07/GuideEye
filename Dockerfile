@@ -7,6 +7,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY backend ./backend
 COPY web ./web
+COPY harnessrouter.json ./harnessrouter.json
 
 ENV PORT=8000
 ENV HOST=0.0.0.0

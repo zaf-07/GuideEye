@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: guideeye
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: BAND_AUTOCONNECT
+        value: "false"
+      - key: CORS_ORIGINS
+        value: https://zaf-07.github.io
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: HR_API_KEY
+        sync: false
