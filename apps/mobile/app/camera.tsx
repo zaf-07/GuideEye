@@ -1,0 +1,1381 @@
+import { Ionicons } from '@expo/vector-icons';
+import { CameraView, useCameraPermissions } from 'expo-camera';
+import { router, useLocalSearchParams } from 'expo-router';
+import * as Speech from 'expo-speech';
+import { useEffect, useRef, useState } from 'react';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import HandTracker, { type SignContextState } from '../components/HandTracker';
+import LiveSceneMap from '../components/LiveSceneMap';
+import {
+  checkWhatChanged,
+  getCampusAlerts,
+  submitSightObservation,
+  type CampusAlert,
+  type WhatChangedResult,
+} from '../src/campusMemory';
+import { glossToEnglish, signWordToEnglish } from '../src/signEnglish';
+import { UtteranceController, initialUtterance, type UtteranceState } from '../src/signUtterance';
+import { useSceneMemory, rememberHazard } from '../src/memory/capture';
+import { useProfile } from '../src/state/ProfileContext';
+import { hasLocalDetector } from '../src/detector';
+import { AssistMode, getApiUrl, hasVisionBackend, interpretSignSequence, useVisionLoop } from '../src/vision';
+import type { VisionObject } from '../src/vision';
+
+const emptySignContext: SignContextState = { frameCount: 0, maxFrames: 180, handCount: 0, ready: false };
+
+type DetectionBox = {
+  l: `${number}%`;
+  t: `${number}%`;
+  w: `${number}%`;
+  h: `${number}%`;
+  label: string;
+};
+
+type AssistFrame = {
+  title: string;
+  detail: string;
+  speech: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  boxes: DetectionBox[];
+};
+
+// How often the camera checks this room's shared reports.
+const SHARED_ALERT_POLL_MS = 4000;
+
+function deduplicateConsecutivePhrases(text: string): string {
+  if (!text) return '';
+  const sentences = text.match(/[^.!?]+[.!?]*|\S+/g) || [];
+  const kept: string[] = [];
+  for (const s of sentences) {
+    const trimmed = s.trim();
+    if (!trimmed) continue;
+    const norm = trimmed.replace(/[.!?,]+$/g, '').trim().toLowerCase();
+    const lastNorm = kept.length > 0 ? kept[kept.length - 1].replace(/[.!?,]+$/g, '').trim().toLowerCase() : '';
+    if (norm !== lastNorm) {
+      kept.push(trimmed);
+    }
+  }
+  return kept.join(' ');
+}
+
+export default function CameraScreen() {
+  const params = useLocalSearchParams<{ initialMode?: string; mode?: string; pocket?: string }>();
+  const [permission, requestPermission] = useCameraPermissions();
+  const [cameraPermissionError, setCameraPermissionError] = useState('');
+  const [cameraReady, setCameraReady] = useState(false);
+  const [mode, setMode] = useState<AssistMode>(params.initialMode === 'sign' || params.mode === 'sign' ? 'sign' : 'scene');
+  const [isPocketMode, setIsPocketMode] = useState(params.pocket === 'true');
+  const [speaking, setSpeaking] = useState(true);
+  const [showLandmarks, setShowLandmarks] = useState(true);
+  const [signContext, setSignContext] = useState<SignContextState>(emptySignContext);
+  const [isAnalysingContext, setIsAnalysingContext] = useState(false);
+  const [translation, setTranslation] = useState('');
+  const [spokenTranslation, setSpokenTranslation] = useState('');
+  const [translationError, setTranslationError] = useState('');
+  const [captureVersion, setCaptureVersion] = useState(0);
+  const [campusLocation] = useState(() => (typeof window !== 'undefined' && window.localStorage ? window.localStorage.getItem('guideeye_campus_location') || 'Library Corridor' : 'Library Corridor'));
+  const [activeAlert, setActiveAlert] = useState<CampusAlert | null>(null);
+  const [deltaNotice, setDeltaNotice] = useState<string>('');
+  const [isCheckingDelta, setIsCheckingDelta] = useState(false);
+  const [sharingSight, setSharingSight] = useState(false);
+  const [sightNotice, setSightNotice] = useState('');
+  const announcedAlerts = useRef<Set<number>>(new Set());
+  const lastCoach = useRef({ text: '', at: 0 });
+  const translationInFlight = useRef(false);
+  const lastTranslation = useRef('');
+  const lastApproachWarning = useRef('');
+  const lastObstacleWarning = useRef('');
+  // Decides when the confirmed signs form a finished sentence (src/signUtterance.ts).
+  const utteranceController = useRef(new UtteranceController());
+  const [utterance, setUtterance] = useState<UtteranceState>(initialUtterance);
+  const capturedSequence = useRef<number[][]>([]);
+  const capturedFrames = useRef<string[]>([]);
+  const cameraRef = useRef<CameraView>(null);
+  const aslEngineRef = useRef<{
+    backspace: () => string;
+    addSpace: () => string;
+    clearText: () => void;
+  } | null>(null);
+
+  const isSignMode = mode === 'sign';
+  const showVisionDebug = process.env.EXPO_PUBLIC_VISION_DEBUG === 'true';
+
+  const requestCameraAccess = async () => {
+    setCameraPermissionError('');
+    try {
+      let nextPermission = await requestPermission();
+
+      // Some desktop browsers do not update Expo's permission hook until the
+      // browser camera API has been asked directly from a click handler. This
+      // fallback keeps the permission prompt tied to the user's button press.
+      if (!nextPermission.granted && Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' } },
+          audio: false,
+        });
+        stream.getTracks().forEach((track) => track.stop());
+        nextPermission = await requestPermission();
+      }
+
+      if (!nextPermission.granted) {
+        setCameraPermissionError(
+          nextPermission.canAskAgain
+            ? 'Camera access was not granted. Select Allow in your browser prompt and try again.'
+            : 'Camera access is blocked. Open your browser’s site settings for this page, allow Camera, then reload GuideEye.',
+        );
+      }
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : '';
+      setCameraPermissionError(
+        /secure|https/i.test(detail)
+          ? 'Camera access requires a secure page. Use localhost or HTTPS, then try again.'
+          : 'Camera access is unavailable. Check that no other app is using the camera and allow it in browser site settings.',
+      );
+    }
+  };
+  const usesBrowserHandTracking = isSignMode && Platform.OS === 'web';
+  // CameraView's still-photo API briefly refreshes the iOS preview. Do not run
+  // the polling capture loop when there is no consumer for those frames: the
+  // previous behavior took an unused photo every 200 ms and made the preview
+  // visibly flicker even though detection was unavailable.
+  const hasFrameAnalyzer = isSignMode ? hasVisionBackend : hasLocalDetector() || hasVisionBackend;
+  const visionEnabled = Boolean(permission?.granted) && cameraReady && !usesBrowserHandTracking && hasFrameAnalyzer;
+  const { result: vision, state: visionState, detections, cameraCoach, obstacles, blocked, performance, scanNow } = useVisionLoop(
+    cameraRef,
+    mode,
+    visionEnabled,
+  );
+  // With neither an on-device runtime nor a backend there is nothing to
+  // detect with, and a blind user would otherwise be left pointing the camera
+  // at a screen that never says why nothing is happening.
+  const noDetectorAtAll = !hasFrameAnalyzer;
+  const fallback: AssistFrame = noDetectorAtAll
+    ? {
+        title: 'Scene detection is unavailable here',
+        detail:
+          'This build has no on-device detector. Open GuideEye in a development build, or set EXPO_PUBLIC_API_URL to a reachable GuideEye server.',
+        speech:
+          'Scene detection is unavailable in this build. Use a development build, or connect a GuideEye server.',
+        icon: 'cloud-offline-outline',
+        boxes: [],
+      }
+    : {
+        title: visionState === 'offline' ? 'Local vision is reconnecting…' : 'Looking for nearby objects…',
+        detail: 'Point the camera at an object and keep it steady for a moment.',
+        speech: 'No objects detected yet.',
+        icon: visionState === 'offline' ? 'cloud-offline-outline' : 'scan-outline',
+        boxes: [],
+      };
+  const objectCounts = detections.reduce<Record<string, number>>((counts, item) => {
+    counts[item.label] = (counts[item.label] || 0) + 1;
+    return counts;
+  }, {});
+  const localSummary = detections.length
+    ? `Detected ${detections.slice(0, 3).map((item) => `${item.label}${item.direction ? ` ${item.direction}` : ''}`).join(', ')}`
+    : 'Looking for nearby objects…';
+  const serverBoxes = (vision?.objects || [])
+    .filter((item) => [item.x, item.y, item.width, item.height].every((value) => typeof value === 'number'))
+    .map((item) => ({
+      l: `${Math.round((item.x || 0) * 100)}%` as `${number}%`,
+      t: `${Math.round((item.y || 0) * 100)}%` as `${number}%`,
+      w: `${Math.round((item.width || 0) * 100)}%` as `${number}%`,
+      h: `${Math.round((item.height || 0) * 100)}%` as `${number}%`,
+      label: `${item.label}${item.distance_m ? ` · ~${item.distance_m.toFixed(1)}m` : item.relative_proximity != null ? ` · ${item.relative_proximity >= 0.67 ? 'nearer' : item.relative_proximity <= 0.33 ? 'farther' : 'mid-depth'}` : ` · ${Math.round(item.confidence * 100)}%`}${item.spatial?.extent_m ? ` · extent ${item.spatial.extent_m.map((value) => value.toFixed(2)).join('×')}m` : ''}${showVisionDebug ? ` · id ${item.track_id ?? '—'} · ${item.motion?.direction || item.position} · ${item.motion?.trend || 'unknown'} · ${Math.round((item.motion?.confidence ?? item.confidence) * 100)}%` : ''}`,
+    }));
+  const mapDetections: VisionObject[] = vision?.objects.length
+    ? vision.objects
+    : detections.map((item) => ({
+      label: item.label,
+      confidence: item.confidence,
+      position: item.direction || 'ahead',
+      x: item.x,
+      y: item.y,
+      width: item.width,
+      height: item.height,
+      distance_m: item.distance_m ?? null,
+      track_id: item.id ?? null,
+    }));
+  const current: AssistFrame = vision || detections.length ? {
+    title: vision?.summary || localSummary,
+    detail: vision?.speech || 'Real-time spatial tracker running privately on this device.',
+    speech: vision?.speech || localSummary,
+    icon: mode === 'sign' ? 'hand-left' : vision?.urgency === 'high' ? 'warning' : 'navigate',
+    // Prefer server YOLO boxes when supplied: they are the detections paired
+    // with metric depth. Keep local YOLOX as a fast offline fallback.
+    boxes: (serverBoxes.length ? serverBoxes : detections.map((item) => ({
+      l: `${Math.round(item.x * 100)}%` as `${number}%`,
+      t: `${Math.round(item.y * 100)}%` as `${number}%`,
+      w: `${Math.round(item.width * 100)}%` as `${number}%`,
+      h: `${Math.round(item.height * 100)}%` as `${number}%`,
+      label: `${item.label}${item.direction ? ` · ${item.direction}` : ''}`,
+    }))),
+  } : fallback;
+
+  // Fingerspelling and isolated-sign classifiers are capture aids only. Do
+  // not present their noisy letter/word guesses as a contextual translation.
+  // Never fall back to isolated letters/words here. The board represents only
+  // the contextual decoder, but exposes its real state so a stalled request
+  // is not mistaken for an empty translation.
+  const displayedTranscript = translation;
+
+  const browserSignHeading = signContext.error
+    ? 'Hand tracking needs attention.'
+    // A local word recognizer is useful as a capture aid, but it must never
+    // override the sentence-level result from the contextual decoder.
+    : translation
+      ? translation
+      : isAnalysingContext
+        ? 'Analyzing the signed phrase…'
+        : 'Ready for a complete signed phrase';
+
+  const browserSignDetail = signContext.error
+    ? signContext.error
+    : translation
+      ? 'Contextual phrase result · Confirm its meaning with the signer'
+      : isAnalysingContext
+        ? 'Collecting an overlapping sequence before producing a phrase result'
+        : signContext.handCount > 0
+              ? `${signContext.handCount} ${signContext.handCount === 1 ? 'hand' : 'hands'} · ${signContext.faceTracked ? 'face' : 'face searching'} · ${signContext.poseTracked ? 'body pose' : 'body searching'} · multimodal movement capture`
+              : 'Frame your hands, face, and upper body to sign';
+
+  const offlineWord = signContext.wordState?.currentWord;
+  // Signs of the current utterance: provisional while signing, final once it ends.
+  const onDeviceWords = utterance.words;
+  const utteranceFinal = utterance.phase === 'finalized';
+  const onDeviceSentence = onDeviceWords.length ? glossToEnglish(onDeviceWords) : '';
+  const cloudUnconfirmed = Boolean(translation) && translation !== spokenTranslation;
+  const signStatus = signContext.error
+    ? 'Tracking problem'
+    : cloudUnconfirmed
+      ? 'Cloud guess · check, then Speak'
+      : utterance.phase === 'finalized'
+      ? (utterance.outcome === 'recognized' ? 'Final' : 'Unable to recognize')
+      : utterance.phase === 'possible_end'
+        ? 'Sentence ending…'
+        : utterance.phase === 'signing'
+          ? (onDeviceWords.length ? 'Signing · provisional' : 'Signing detected')
+          : signContext.handCount > 0 ? 'Tracking hands' : 'Ready · show your hands';
+  // What the model is seeing right now, with its other guesses, so the signer
+  // can read the meaning instead of hearing it.
+  const liveGuesses = (signContext.wordState?.top3 ?? [])
+    .filter((guess) => guess.label && guess.confidence > 0.01)
+    .map((guess) => ({ word: signWordToEnglish(guess.label), percent: Math.round(guess.confidence * 100) }));
+  const liveWord = offlineWord ? signWordToEnglish(offlineWord) : '';
+  const currentLetter = signContext.aslState?.currentLetter;
+  const spelledText = signContext.aslState?.spelledText;
+  const isHoldingLetter = signContext.aslState?.isHolding;
+
+  const contextBoardText = displayedTranscript
+    || (spelledText ? `Spelled: "${spelledText}"` : '')
+    || (isHoldingLetter && currentLetter ? `Letter: "${currentLetter}" (Hold to type)` : '')
+    || (utteranceFinal && utterance.outcome === 'unrecognized' ? "Couldn't recognize that. Please sign it again." : '')
+    || (onDeviceSentence ? (utteranceFinal ? onDeviceSentence : `${onDeviceSentence} …`) : '')
+    || (offlineWord ? `Reading: "${signWordToEnglish(offlineWord)}"…` : '')
+    || (currentLetter ? `Letter: "${currentLetter}" (Hold to type)` : '')
+    || (isAnalysingContext
+      ? 'Analyzing signed gesture…'
+      : signContext.ready
+        ? 'Ready for next sign (On-device)…'
+        : signContext.handCount > 0
+          ? `${signContext.handCount} ${signContext.handCount === 1 ? 'hand' : 'hands'} tracked · live capture`
+          : 'Show your hands to begin signing');
+  const contextBoardIsError = false;
+
+  const signHeading = usesBrowserHandTracking
+    ? browserSignHeading
+    : vision?.summary || (visionState === 'offline' ? 'Sign interpretation is reconnecting…' : 'Looking for a signed message…');
+  const signDetail = usesBrowserHandTracking
+    ? browserSignDetail
+    : vision?.should_speak && vision.speech
+      ? `${vision.speech} · Not spoken yet. Tap Speak if this is what you signed.`
+      : vision?.speech || 'Keep both hands clearly in the camera frame.';
+
+  const speak = (text = current.speech) => {
+    if (!speaking || !text.trim()) return;
+    Speech.stop();
+    const isRu = /[\u0400-\u04FF]/.test(text);
+    Speech.speak(text, { language: isRu ? 'ru-RU' : 'en-US', rate: 0.95 });
+  };
+
+  const switchMode = (nextMode: AssistMode) => {
+    if (nextMode === mode) return;
+    Speech.stop();
+    setMode(nextMode);
+    setSignContext(emptySignContext);
+    setTranslation('');
+    setSpokenTranslation('');
+    setTranslationError('');
+    setIsAnalysingContext(false);
+    translationInFlight.current = false;
+    lastTranslation.current = '';
+  };
+
+  const restartContextCapture = () => {
+    if (!usesBrowserHandTracking) {
+      scanNow();
+      return;
+    }
+    aslEngineRef.current?.clearText();
+    setSignContext(emptySignContext);
+    capturedSequence.current = [];
+    capturedFrames.current = [];
+    setTranslation('');
+    setSpokenTranslation('');
+    setTranslationError('');
+    setIsAnalysingContext(false);
+    translationInFlight.current = false;
+    lastTranslation.current = '';
+    setUtterance(utteranceController.current.reset());
+    setCaptureVersion((value) => value + 1);
+  };
+
+  const interpretLiveContext = async (sequence: number[][], frames: string[]) => {
+    capturedSequence.current = sequence;
+    capturedFrames.current = frames;
+    if (frames.length !== 3 || translationInFlight.current) return;
+    const apiUrl = getApiUrl();
+    if (!apiUrl) return;
+
+    translationInFlight.current = true;
+    setIsAnalysingContext(true);
+    setTranslationError('');
+    const requestController = new AbortController();
+    const timeout = setTimeout(() => requestController.abort(), 6_000);
+    try {
+      const interpreted = await interpretSignSequence(frames, lastTranslation.current, requestController.signal);
+      if (interpreted && interpreted.transcript) {
+        // A vision model can produce a sentence that was not signed, so it is
+        // shown for the signer to check and spoken only from the Speak button.
+        const clean = deduplicateConsecutivePhrases(interpreted.transcript);
+        if (clean) {
+          setTranslation(clean);
+          lastTranslation.current = clean;
+        }
+      }
+    } catch {
+      // Cloud is offline or unreachable: silently continue on-device without any error!
+    } finally {
+      clearTimeout(timeout);
+      setIsAnalysingContext(false);
+      translationInFlight.current = false;
+    }
+  };
+
+  useEffect(() => () => {
+    void Speech.stop();
+  }, []);
+
+  const { profile } = useProfile();
+
+  // Fold what the camera sees into the memory graph. Scene mode only: the
+  // sign-reading view is a conversation, not a place.
+  useSceneMemory(profile, {
+    place: campusLocation,
+    objects: (vision?.objects ?? []).map((object) => ({
+      label: object.label,
+      confidence: object.confidence,
+      distance_m: object.distance_m ?? null,
+    })),
+    enabled: !isSignMode,
+  });
+
+  useEffect(() => {
+    if (isSignMode || !vision?.approaching?.length) return;
+    const warning = vision.approaching.map((item) => `${item.label}:${item.distance_m}`).join('|');
+    if (warning !== lastApproachWarning.current) {
+      lastApproachWarning.current = warning;
+      speak(vision.speech);
+    }
+  }, [isSignMode, vision?.approaching, vision?.speech]);
+
+  useEffect(() => {
+    if (isSignMode || !vision?.should_speak || !vision.speech) return;
+    if (vision.scene_key !== lastObstacleWarning.current) {
+      lastObstacleWarning.current = vision.scene_key;
+      speak(vision.speech);
+    }
+  }, [isSignMode, vision?.should_speak, vision?.speech, vision?.scene_key]);
+
+  // Feed the utterance controller: on every tracker update, and on a timer so
+  // a sentence still ends when nothing on screen changes.
+  useEffect(() => {
+    if (!usesBrowserHandTracking) return undefined;
+    const feed = () => {
+      const words = signContext.wordState?.words ?? [];
+      const next = utteranceController.current.update({
+        now: Date.now(),
+        handsVisible: signContext.handCount > 0,
+        commitCount: signContext.wordState?.commitCount ?? 0,
+        latestWord: words[words.length - 1],
+      });
+      setUtterance((previous) => (previous === next ? previous : next));
+    };
+    feed();
+    const timer = setInterval(feed, 200);
+    return () => clearInterval(timer);
+  }, [usesBrowserHandTracking, signContext.handCount, signContext.wordState?.commitCount]);
+
+  // Sign to voice is silent by design: recognized words appear on screen, and
+  // nothing is spoken unless the signer taps Speak.
+
+  // Shared Sight: check this room's shared reports every few seconds. On
+  // arrival, say what is already reported (hazards first); afterwards, say
+  // each new report once. Reports this phone made are not read back to it.
+  useEffect(() => {
+    if (mode !== 'scene') return undefined;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let firstCheck = true;
+    announcedAlerts.current = new Set();
+    const rank = { high: 0, medium: 1, low: 2 } as const;
+    const describe = (alert: CampusAlert) => (alert.description && alert.description !== alert.label ? alert.description : alert.label);
+    const check = async () => {
+      const alerts = await getCampusAlerts(campusLocation).catch(() => null);
+      if (cancelled) return;
+      if (alerts) {
+        const fromOthers = alerts.filter((alert) => alert.reported_by !== 'you' && alert.reported_by !== 'this_device');
+        const fresh = fromOthers
+          .filter((alert) => !announcedAlerts.current.has(alert.id))
+          .sort((left, right) => rank[left.severity] - rank[right.severity]);
+        fresh.forEach((alert) => announcedAlerts.current.add(alert.id));
+        setActiveAlert(fromOthers.slice().sort((left, right) => rank[left.severity] - rank[right.severity])[0] ?? null);
+        if (fresh.length) {
+          const spoken = firstCheck
+            ? `${fresh.length === 1 ? 'One report' : `${fresh.length} reports`} in ${campusLocation}: ${fresh.slice(0, 2).map((alert) => `${describe(alert)}, ${alert.relative_time}`).join('. ')}.`
+            : `New report in ${campusLocation}: ${describe(fresh[0])}.`;
+          Speech.speak(spoken, { rate: 0.95 });
+        }
+        firstCheck = false;
+      }
+      timer = setTimeout(() => void check(), SHARED_ALERT_POLL_MS);
+    };
+    void check();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [mode, campusLocation]);
+
+  // Camera coach, spoken: one short instruction at a time, never repeated
+  // within 8 s, and the same advice at most every 20 s.
+  useEffect(() => {
+    if (mode !== 'scene' || !cameraCoach) return;
+    const advice = cameraCoach.blur
+      ? 'Hold steady.'
+      : cameraCoach.poor_lighting
+        ? "It's dark here. Turn on the flashlight or find more light."
+        : cameraCoach.overexposed
+          ? 'Too bright. Tilt the camera away from the light.'
+          : cameraCoach.cropped_labels.length
+            ? `Move back a little. The ${cameraCoach.cropped_labels[0]} is cut off.`
+            : '';
+    if (!advice) return;
+    const now = Date.now();
+    const sinceLast = now - lastCoach.current.at;
+    if (sinceLast < 8000 || (advice === lastCoach.current.text && sinceLast < 20000)) return;
+    lastCoach.current = { text: advice, at: now };
+    Speech.speak(advice, { rate: 1.0 });
+  }, [cameraCoach, mode]);
+
+  const handleWhatChanged = async () => {
+    Speech.stop();
+    setIsCheckingDelta(true);
+    try {
+      const res = await checkWhatChanged(campusLocation, detections);
+      setDeltaNotice(res.delta_summary);
+      Speech.speak(res.speech, { rate: 0.95 });
+    } catch {
+      setDeltaNotice('Baseline checked. No changes detected.');
+    } finally {
+      setIsCheckingDelta(false);
+    }
+  };
+
+  const shareCurrentDetections = async () => {
+    // The server tracker and the on-device detector update on different
+    // cadences. Merge them instead of letting a low-confidence server result
+    // hide a stronger local prediction for the same object.
+    const bestByLabel = new Map<string, { label: string; confidence: number }>();
+    for (const item of [...(vision?.objects ?? []), ...detections]) {
+      const label = item.label?.trim();
+      if (!label || !Number.isFinite(item.confidence) || item.confidence < 0 || item.confidence > 1) continue;
+      const key = label.toLowerCase();
+      const previous = bestByLabel.get(key);
+      if (!previous || item.confidence > previous.confidence) {
+        bestByLabel.set(key, { label, confidence: item.confidence });
+      }
+    }
+    const allCandidates = [...bestByLabel.values()].sort((a, b) => b.confidence - a.confidence);
+    const candidates = allCandidates.filter((item) => item.confidence >= 0.40).slice(0, 8);
+    if (!candidates.length) {
+      const best = allCandidates.slice(0, 3).map((item) => `${item.label} (${Math.round(item.confidence * 100)}%)`).join(', ');
+      setSightNotice(best
+        ? `No detected object reached the 40% share threshold. Best results: ${best}. Improve framing or lighting and try again.`
+        : 'No objects detected in the latest camera frames. Point at a clear object and try again.');
+      return;
+    }
+    setSharingSight(true);
+    setSightNotice('');
+    // A user-confirmed detection is the strongest signal this feature has:
+    // record it as a hazard the graph should weight above passing objects.
+    candidates.forEach((item) => rememberHazard(profile, item.label, campusLocation));
+    try {
+      const results = await Promise.allSettled(candidates.map((item) => submitSightObservation({
+        zone_id: campusLocation,
+        category: 'object',
+        label: item.label,
+        description: 'Camera detection reviewed and confirmed by the user.',
+        confidence: item.confidence,
+        privacy_scope: 'shared',
+        verified: true,
+        origin: 'detector',
+      })));
+      const accepted = results.filter((item) => item.status === 'fulfilled').length;
+      const failures = results.flatMap((result, index) => result.status === 'rejected'
+        ? [{ label: candidates[index].label, message: result.reason instanceof Error ? result.reason.message : String(result.reason) }]
+        : []);
+      const duplicates = failures.filter((item) => /duplicate/i.test(item.message));
+      if (accepted) {
+        const duplicateNote = duplicates.length
+          ? ` · Already shared recently: ${duplicates.map((item) => item.label).join(', ')}`
+          : '';
+        const otherFailure = failures.find((item) => !/duplicate/i.test(item.message));
+        const failureNote = otherFailure ? ` · Could not share ${otherFailure.label}: ${otherFailure.message}` : '';
+        setSightNotice(`${accepted} verified ${accepted === 1 ? 'observation' : 'observations'} shared with ${campusLocation}.${duplicateNote}${failureNote}`);
+      } else if (duplicates.length === failures.length) {
+        setSightNotice(`These detections were already shared recently: ${duplicates.map((item) => item.label).join(', ')}. Try again after a short while if the room has changed.`);
+      } else {
+        const failure = failures[0];
+        const message = failure?.message || 'Unknown server error';
+        const helpfulMessage = /401|403|unauthori[sz]ed|access denied/i.test(message)
+          ? 'Shared Sight access was denied. Check the shared access key and device allowlist in the Hub.'
+          : /failed to fetch|network request failed|connect the dgx spark api/i.test(message)
+            ? `Cannot reach the VisionMate API. Check that the API server is running and reachable. (${message})`
+            : `Could not share ${failure?.label || 'the detections'}: ${message}`;
+        setSightNotice(helpfulMessage);
+      }
+    } finally {
+      setSharingSight(false);
+    }
+  };
+
+  if (!permission) return <View style={c.fallback} />;
+
+  if (!permission.granted) {
+    return (
+      <SafeAreaView style={c.permission}>
+        <View style={c.permissionIcon}><Ionicons name="camera" size={34} color="#B7FF56" /></View>
+        <Text style={c.permissionTitle}>Let your camera help communicate</Text>
+        <Text style={c.permissionText}>GuideEye needs camera access for scene assistance and sign-context capture. This prototype does not save video.</Text>
+        <Pressable onPress={requestCameraAccess} style={c.allow} accessibilityRole="button" accessibilityLabel="Allow camera access">
+          <Text style={c.allowText}>Allow camera access</Text>
+        </Pressable>
+        {cameraPermissionError ? <Text style={c.permissionError} accessibilityRole="alert">{cameraPermissionError}</Text> : null}
+        <Pressable onPress={() => router.back()}><Text style={c.backText}>Go back</Text></Pressable>
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <View style={c.root}>
+      {usesBrowserHandTracking ? (
+        <HandTracker
+          key={captureVersion}
+          aslEngineRef={aslEngineRef}
+          showLandmarks={showLandmarks}
+          onContextChange={setSignContext}
+          onContextCaptured={interpretLiveContext}
+        />
+      ) : (
+        <>
+          <CameraView
+            ref={cameraRef}
+            style={StyleSheet.absoluteFill}
+            facing="back"
+            zoom={0}
+            animateShutter={false}
+            onCameraReady={() => setCameraReady(true)}
+          />
+          <View style={c.boxesLayer} pointerEvents="none">
+            {current.boxes.map((box, index) => (
+              <View key={`${mode}-${index}`} style={[c.box, { left: box.l, top: box.t, width: box.w, height: box.h }, isSignMode && c.signBox]}>
+                <View style={c.boxLabelContainer}>
+                  <Text style={c.boxLabel}>{box.label}</Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        </>
+      )}
+      <View style={c.shade} />
+      <SafeAreaView style={c.overlay}>
+        <View style={c.top}>
+          <Pressable accessibilityLabel="Go back" onPress={() => router.back()} style={c.round}>
+            <Ionicons name="chevron-back" size={24} color="#fff" />
+          </Pressable>
+          <View style={c.modeIndicator}>
+            <View style={c.greenDot} />
+            <Text style={c.modeText}>
+              {usesBrowserHandTracking
+                ? 'ON-DEVICE ASL · OFFLINE READY'
+                : visionState === 'offline'
+                  ? 'ON-DEVICE VISION · OFFLINE READY'
+                  : visionState === 'analyzing'
+                    ? 'VISION · ANALYZING'
+                    : isSignMode
+                      ? 'SIGN INTERPRETATION · LIVE'
+                      : hasVisionBackend
+                        ? 'HYBRID VISION · LIVE'
+                        : 'LOCAL YOLO · LIVE'}
+            </Text>
+          </View>
+          <Pressable
+            accessibilityLabel="Pocket mode"
+            onPress={() => {
+              setIsPocketMode((value) => {
+                const next = !value;
+                Speech.stop();
+                Speech.speak(next ? 'Pocket mode enabled' : 'Standard mode', { language: 'en-US', rate: 1.0 });
+                return next;
+              });
+            }}
+            style={[c.round, isPocketMode && { backgroundColor: '#B7FF56' }]}
+          >
+            <Ionicons name="phone-portrait-outline" size={20} color={isPocketMode ? '#07110F' : '#fff'} />
+          </Pressable>
+          <Pressable accessibilityLabel="Toggle spoken output" onPress={() => { setSpeaking((value) => !value); Speech.stop(); }} style={c.round}>
+            <Ionicons name={speaking ? 'volume-high' : 'volume-mute'} size={21} color="#fff" />
+          </Pressable>
+        </View>
+
+        {activeAlert && mode === 'scene' && (
+          <View style={c.campusAlertBar}>
+            <View style={c.alertIconBadge}>
+              <Ionicons name="warning" size={13} color="#07110F" />
+            </View>
+            <View style={c.alertTextGroup}>
+              <Text style={c.alertLoc}>{activeAlert.location.toUpperCase()} · {activeAlert.relative_time}:</Text>
+              <Text style={c.alertDesc} numberOfLines={1}>{activeAlert.description}</Text>
+            </View>
+          </View>
+        )}
+
+        <View style={c.modeTabs} accessibilityRole="tablist">
+          <Pressable accessibilityRole="tab" accessibilityState={{ selected: mode === 'scene' }} onPress={() => switchMode('scene')} style={[c.modeTab, mode === 'scene' && c.modeTabActive]}>
+            <Ionicons name="eye-outline" size={17} color={mode === 'scene' ? '#09130D' : '#DDE9E4'} />
+            <Text style={[c.modeTabText, mode === 'scene' && c.modeTabTextActive]}>Scene assist</Text>
+          </Pressable>
+          <Pressable accessibilityRole="tab" accessibilityState={{ selected: mode === 'sign' }} onPress={() => switchMode('sign')} style={[c.modeTab, mode === 'sign' && c.modeTabActive]}>
+            <Ionicons name="hand-left-outline" size={17} color={mode === 'sign' ? '#09130D' : '#DDE9E4'} />
+            <Text style={[c.modeTabText, mode === 'sign' && c.modeTabTextActive]}>Sign to voice</Text>
+          </Pressable>
+          <Pressable accessibilityRole="tab" onPress={() => router.push('/bridge' as any)} style={c.modeTab}>
+            <Ionicons name="people-outline" size={17} color="#DDE9E4" />
+            <Text style={c.modeTabText}>Bridge</Text>
+          </Pressable>
+        </View>
+
+        {isPocketMode && (
+          <Pressable
+            style={c.pocketOverlay}
+            onPress={() => {
+              speak(current.speech);
+            }}
+            accessibilityLabel="Pocket mode active. Tap anywhere to repeat surroundings."
+          >
+            <View style={c.pocketBadge}>
+              <Ionicons name="shirt-outline" size={24} color="#B7FF56" />
+              <Text style={c.pocketBadgeText}>CHEST POCKET ACTIVE</Text>
+            </View>
+            <Text style={c.pocketHeading}>
+              {current.title}
+            </Text>
+            <Text style={c.pocketDetail}>
+              {current.detail}
+            </Text>
+            <View style={c.pocketTapHint}>
+              <Ionicons name="hand-right-outline" size={18} color="#B7FF56" />
+              <Text style={c.pocketTapText}>Tap anywhere on the screen to repeat</Text>
+            </View>
+            <Pressable
+              style={c.pocketExitBtn}
+              onPress={(e) => {
+                e.stopPropagation();
+                setIsPocketMode(false);
+              }}
+            >
+              <Text style={c.pocketExitText}>Exit Pocket Mode</Text>
+            </Pressable>
+          </Pressable>
+        )}
+
+        {!isSignMode && cameraCoach && (
+          <View style={c.coachBanner} accessibilityLiveRegion="polite">
+            <Ionicons name={cameraCoach.blur || cameraCoach.poor_lighting || cameraCoach.overexposed || cameraCoach.cropped_labels.length ? 'camera-outline' : 'checkmark-circle-outline'} size={15} color="#C8FF72" />
+            <Text style={c.coachText}>
+              {[
+                cameraCoach.blur ? 'Image looks blurry; hold steady' : '',
+                cameraCoach.poor_lighting ? 'Lighting is low' : '',
+                cameraCoach.overexposed ? 'Frame is very bright' : '',
+                cameraCoach.cropped_labels.length ? `Move back; ${cameraCoach.cropped_labels.join(', ')} is cropped` : '',
+              ].filter(Boolean).join(' · ') || 'Frame quality looks good'}
+            </Text>
+          </View>
+        )}
+
+        <View style={c.reticle}>
+          {!isSignMode && <LiveSceneMap detections={mapDetections} obstacles={obstacles} blocked={blocked} performance={performance} />}
+          {usesBrowserHandTracking && isSignMode && (
+            <View style={c.aslHudContainer}>
+              {currentLetter ? (
+                <View style={c.aslLetterCard}>
+                  <View style={c.aslBadge}>
+                    <Text style={c.aslBadgeLetter}>{currentLetter}</Text>
+                  </View>
+                  <View style={c.aslMeta}>
+                    <View style={c.aslMetaRow}>
+                      <Text style={c.aslConfidenceText}>
+                        {Math.round((signContext.aslState?.currentConfidence ?? 0) * 100)}%
+                      </Text>
+                      <Text style={c.aslChipText}>
+                        {signContext.aslState?.holdProgress === 1 ? 'TYPED' : 'HOLD'}
+                      </Text>
+                    </View>
+                    <View style={c.aslProgressTrack}>
+                      <View
+                        style={[
+                          c.aslProgressFill,
+                          signContext.aslState?.holdProgress === 1 && c.aslProgressFillDone,
+                          { width: `${Math.round((signContext.aslState?.holdProgress ?? 0) * 100)}%` },
+                        ]}
+                      />
+                    </View>
+                  </View>
+                </View>
+              ) : offlineWord ? (
+                <View style={c.aslLetterCard}>
+                  <View style={c.aslBadge}>
+                    <Ionicons name="hand-left" size={24} color="#07110F" />
+                  </View>
+                  <View style={c.aslMeta}>
+                    <View style={c.aslMetaRow}>
+                      <Text style={c.aslConfidenceText}>{signWordToEnglish(offlineWord).toUpperCase()}</Text>
+                      <Text style={c.aslChipText}>GESTURE</Text>
+                    </View>
+                    <View style={c.aslProgressTrack}>
+                      <View
+                        style={[
+                          c.aslProgressFill,
+                          c.aslProgressFillDone,
+                          { width: `${Math.round((signContext.wordState?.currentConfidence ?? 0.9) * 100)}%` },
+                        ]}
+                      />
+                    </View>
+                  </View>
+                </View>
+              ) : (
+                <View style={c.aslPromptCard}>
+                  <Ionicons name="chatbubbles-outline" size={17} color="#C8FF72" />
+                  <Text style={c.aslPromptText}>Context-aware sign translation</Text>
+                </View>
+              )}
+            </View>
+          )}
+        </View>
+
+        <View style={c.bottom}>
+          {usesBrowserHandTracking ? (
+            <View style={[c.aslWordCard, c.aslWordCardPanel]}>
+              <View style={c.aslWordHeader}>
+                <Text style={c.aslWordLabel} accessibilityLiveRegion="polite">SIGN · {signStatus.toUpperCase()}</Text>
+                <View style={c.aslHeaderActions}>
+                  <Pressable
+                    onPress={() => setShowLandmarks((visible) => !visible)}
+                    style={c.aslOverlayToggle}
+                    accessibilityLabel={showLandmarks ? 'Hide visual tracking lines' : 'Show visual tracking lines'}
+                  >
+                    <Ionicons name={showLandmarks ? 'eye-off-outline' : 'eye-outline'} size={15} color="#DDE9E4" />
+                    <Text style={c.aslOverlayToggleText}>{showLandmarks ? 'Hide lines' : 'Show lines'}</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => {
+                      if (displayedTranscript) setSpokenTranslation(displayedTranscript);
+                      speak(displayedTranscript || spelledText || onDeviceSentence);
+                    }}
+                    disabled={!displayedTranscript && !spelledText && !onDeviceSentence}
+                    style={[c.aslSpeakMiniBtn, !displayedTranscript && !spelledText && !onDeviceSentence && c.aslSpeakMiniBtnDisabled]}
+                    accessibilityLabel={cloudUnconfirmed ? 'Confirm and speak the cloud translation' : 'Speak contextual translation'}
+                  >
+                    <Ionicons name="volume-high" size={15} color="#07110F" />
+                    <Text style={c.aslSpeakMiniText}>Speak</Text>
+                  </Pressable>
+                </View>
+              </View>
+              <View style={c.liveRow} accessibilityLiveRegion="polite" accessibilityLabel={liveWord ? `Seeing: ${liveWord}` : 'Waiting for a sign'}>
+                <Text style={c.liveLabel}>SEEING</Text>
+                <Text style={[c.liveWord, !liveWord && c.liveWordEmpty]} numberOfLines={1}>{liveWord || '—'}</Text>
+                <View style={c.liveGuesses}>
+                  {liveGuesses.map((guess, index) => (
+                    <View key={`${guess.word}-${index}`} style={[c.liveChip, index === 0 && c.liveChipTop]}>
+                      <Text style={[c.liveChipText, index === 0 && c.liveChipTextTop]}>{guess.word} {guess.percent}%</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+              <Text style={[c.aslWordText, !displayedTranscript && !spelledText && !onDeviceSentence && !offlineWord && c.aslWordTextEmpty, contextBoardIsError && c.aslWordTextError]}>
+                {contextBoardText}
+                <Text style={c.aslCursor}>_</Text>
+              </Text>
+              <View style={c.aslWordActions}>
+                <Pressable
+                  onPress={() => setUtterance(utteranceController.current.finish())}
+                  disabled={utterance.phase !== 'signing' && utterance.phase !== 'possible_end'}
+                  style={[c.aslActionBtn, c.aslFinishBtn, utterance.phase !== 'signing' && utterance.phase !== 'possible_end' && c.aslSpeakMiniBtnDisabled]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Finish sentence"
+                >
+                  <Ionicons name="checkmark-done" size={14} color="#07110F" />
+                  <Text style={[c.aslActionText, c.aslFinishText]}>Finish sentence</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => aslEngineRef.current?.addSpace()}
+                  style={c.aslActionBtn}
+                  accessibilityLabel="Add space"
+                >
+                  <Ionicons name="scan-outline" size={14} color="#DDE9E4" />
+                  <Text style={c.aslActionText}>Space</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => aslEngineRef.current?.backspace()}
+                  style={c.aslActionBtn}
+                  accessibilityLabel="Backspace"
+                >
+                  <Ionicons name="backspace-outline" size={14} color="#DDE9E4" />
+                  <Text style={c.aslActionText}>Backspace</Text>
+                </Pressable>
+                <Pressable onPress={restartContextCapture} style={[c.aslActionBtn, c.aslActionClearBtn]} accessibilityLabel="Clear sign context">
+                  <Ionicons name="trash-outline" size={14} color="#FF826F" />
+                  <Text style={[c.aslActionText, c.aslActionClearText]}>Clear</Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : !usesBrowserHandTracking ? (
+            <View style={[c.answer, isSignMode && c.signAnswer]}>
+              <View style={[c.answerIcon, isSignMode && c.signAnswerIcon]}><Ionicons name={isSignMode ? 'hand-left' : current.icon} size={25} color="#07110F" /></View>
+              <View style={c.answerCopy}>
+                <Text style={isSignMode ? c.translationText : c.answerTitle}>{isSignMode ? signHeading : current.title}</Text>
+                <Text style={isSignMode ? c.translationDetail : c.answerText}>{isSignMode ? signDetail : current.detail}</Text>
+              </View>
+            </View>
+          ) : null}
+
+          {!usesBrowserHandTracking && deltaNotice ? (
+            <View style={c.deltaNoticeCard}>
+              <View style={c.deltaIconGroup}>
+                <Ionicons name="git-compare" size={16} color="#07110F" />
+                <Text style={c.deltaNoticeLabel}>DELTA (WHAT CHANGED):</Text>
+              </View>
+              <Text style={c.deltaNoticeText}>{deltaNotice}</Text>
+              <Pressable onPress={() => setDeltaNotice('')} style={c.deltaClose}>
+                <Ionicons name="close" size={14} color="#07110F" />
+              </Pressable>
+            </View>
+          ) : null}
+
+          {!usesBrowserHandTracking && (
+            <>
+              {!isSignMode && (detections.length > 0 || (vision?.objects.length ?? 0) > 0) && (
+                <View style={c.shareRow}>
+                  <Pressable onPress={() => void shareCurrentDetections()} disabled={sharingSight} style={[c.shareButton, sharingSight && c.shareButtonDisabled]}>
+                    <Ionicons name="radio-outline" size={15} color="#07110F" />
+                    <Text style={c.shareButtonText}>{sharingSight ? 'Sharing…' : 'I confirm these detections · Share'}</Text>
+                  </Pressable>
+                </View>
+              )}
+              {!!sightNotice && <Text style={c.sightNotice} accessibilityLiveRegion="polite">{sightNotice}</Text>}
+              <View style={c.controls}>
+                <Pressable onPress={restartContextCapture} style={c.control}>
+                  <Ionicons name="refresh" size={22} color="#EAF6F0" />
+                  <Text style={c.controlText}>{isSignMode ? 'Read again' : 'Scan again'}</Text>
+                </Pressable>
+                <Pressable
+                  accessibilityLabel={isSignMode ? 'Speak translation' : 'Repeat description'}
+                  onPress={() => {
+                    if (isSignMode && translation) setSpokenTranslation(translation);
+                    speak(translation || current.speech);
+                  }}
+                  style={c.speak}
+                >
+                  <Ionicons name="volume-high" size={24} color="#07110F" />
+                </Pressable>
+                {!isSignMode && (
+                  <Pressable
+                    onPress={handleWhatChanged}
+                    style={[c.control, isCheckingDelta && c.controlActive]}
+                    accessibilityLabel="Check what changed in this room"
+                  >
+                    <Ionicons
+                      name="git-compare-outline"
+                      size={22}
+                      color={isCheckingDelta ? '#07110F' : '#B7FF56'}
+                    />
+                    <Text style={[c.controlText, c.deltaControlText]}>
+                      {isCheckingDelta ? 'Checking…' : 'Changed?'}
+                    </Text>
+                  </Pressable>
+                )}
+              </View>
+              <Text style={c.hint}>{isSignMode ? 'Tap the megaphone to speak the interpreted text aloud' : 'Tap Changed? to hear only what is new, or the speaker to repeat'}</Text>
+            </>
+          )}
+        </View>
+      </SafeAreaView>
+    </View>
+  );
+}
+
+const c = StyleSheet.create({
+  root: { flex: 1, backgroundColor: '#07110F' },
+  fallback: { flex: 1, backgroundColor: '#07110F' },
+  shade: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: 'rgba(2,10,8,.18)' },
+  // Above boxesLayer (zIndex 1) so detection boxes never cover the map or buttons.
+  overlay: { flex: 1, paddingHorizontal: 18, zIndex: 2 },
+  top: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  round: { width: 46, height: 46, borderRadius: 23, backgroundColor: 'rgba(4,13,10,.62)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,.16)' },
+  modeIndicator: { backgroundColor: 'rgba(4,13,10,.76)', borderRadius: 99, paddingHorizontal: 13, paddingVertical: 9, flexDirection: 'row', alignItems: 'center', gap: 7 },
+  greenDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#B7FF56' },
+  modeText: { color: '#EAF5EF', fontSize: 10, fontWeight: '800', letterSpacing: 1.1 },
+  modeTabs: { flexDirection: 'row', alignSelf: 'center', gap: 6, backgroundColor: 'rgba(4,13,10,.74)', borderRadius: 17, borderWidth: 1, borderColor: 'rgba(255,255,255,.12)', padding: 5, marginTop: 16 },
+  modeTab: { minHeight: 42, flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 13, borderRadius: 12 },
+  modeTabActive: { backgroundColor: '#B7FF56' },
+  modeTabText: { color: '#DDE9E4', fontSize: 12, fontWeight: '800' },
+  modeTabTextActive: { color: '#09130D' },
+  coachBanner: { alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 7, maxWidth: '92%', backgroundColor: 'rgba(4,20,14,.9)', borderWidth: 1, borderColor: 'rgba(183,255,86,.45)', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 8, marginTop: 10 },
+  coachText: { color: '#E6F3EB', fontSize: 11, fontWeight: '700', flexShrink: 1 },
+  boxesLayer: { ...StyleSheet.absoluteFill, zIndex: 1 },
+  reticle: { flex: 1, marginVertical: 12, position: 'relative' },
+  box: {
+    position: 'absolute',
+    borderWidth: 2,
+    borderColor: '#B7FF56',
+    borderRadius: 8,
+    shadowColor: '#B7FF56',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35,
+    shadowRadius: 6,
+  },
+  signBox: { borderColor: '#C8FF72', shadowColor: '#C8FF72' },
+  boxLabelContainer: {
+    position: 'absolute',
+    top: -24,
+    left: -2,
+    backgroundColor: 'rgba(7, 24, 18, 0.94)',
+    borderWidth: 1,
+    borderColor: '#B7FF56',
+    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+  },
+  boxLabel: {
+    color: '#B7FF56',
+    fontWeight: '800',
+    fontSize: 10,
+    letterSpacing: 0.3,
+  },
+  bottom: { paddingBottom: 10 },
+  shareRow: { alignItems: 'center', marginTop: 9 },
+  shareButton: { flexDirection: 'row', gap: 7, alignItems: 'center', backgroundColor: '#B7FF56', borderRadius: 12, paddingHorizontal: 13, paddingVertical: 9 },
+  shareButtonDisabled: { opacity: 0.55 },
+  shareButtonText: { color: '#07110F', fontSize: 11, fontWeight: '900' },
+  sightNotice: { color: '#C8FF72', textAlign: 'center', fontSize: 10, marginTop: 5 },
+  answer: { flexDirection: 'row', alignItems: 'center', gap: 13, backgroundColor: 'rgba(5,18,14,.9)', borderWidth: 1, borderColor: 'rgba(183,255,86,.28)', borderRadius: 20, padding: 16 },
+  signAnswer: { borderColor: 'rgba(200,255,114,.62)', backgroundColor: 'rgba(5,26,17,.94)' },
+  answerIcon: { width: 48, height: 48, borderRadius: 15, backgroundColor: '#B7FF56', alignItems: 'center', justifyContent: 'center' },
+  signAnswerIcon: { backgroundColor: '#C8FF72' },
+  answerCopy: { flex: 1 },
+  answerTitle: { color: '#F7FBF8', fontSize: 18, fontWeight: '800' },
+  answerText: { color: '#AFC1BA', fontSize: 13, lineHeight: 19, marginTop: 4 },
+  translationText: { color: '#F7FBF8', fontSize: 20, lineHeight: 26, fontWeight: '800', marginTop: 5 },
+  translationDetail: { color: '#AFC1BA', fontSize: 11, lineHeight: 16, marginTop: 5 },
+  controls: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', marginTop: 17 },
+  control: { alignItems: 'center', width: 90, gap: 5 },
+  controlText: { color: '#DDE9E4', fontSize: 10, fontWeight: '700' },
+  speak: { width: 66, height: 66, borderRadius: 33, backgroundColor: '#B7FF56', alignItems: 'center', justifyContent: 'center', borderWidth: 5, borderColor: 'rgba(183,255,86,.25)' },
+  speakDisabled: { opacity: 0.42 },
+  hint: { color: 'rgba(255,255,255,.62)', textAlign: 'center', fontSize: 10, marginTop: 12 },
+  permission: { flex: 1, backgroundColor: '#07110F', alignItems: 'center', justifyContent: 'center', padding: 30 },
+  permissionIcon: { width: 76, height: 76, borderRadius: 24, backgroundColor: '#142D24', alignItems: 'center', justifyContent: 'center' },
+  permissionTitle: { color: '#F4FAF6', fontSize: 26, fontWeight: '800', marginTop: 24, textAlign: 'center' },
+  permissionText: { color: '#94A9A0', fontSize: 15, lineHeight: 23, textAlign: 'center', maxWidth: 430, marginTop: 12 },
+  permissionError: { color: '#FFD288', fontSize: 14, lineHeight: 20, textAlign: 'center', maxWidth: 430, marginTop: 14 },
+  allow: { backgroundColor: '#B7FF56', borderRadius: 14, paddingHorizontal: 24, paddingVertical: 15, marginTop: 28 },
+  allowText: { color: '#07110F', fontWeight: '800' },
+  backText: { color: '#91A79E', marginTop: 18 },
+
+  // On-Device ASL Live HUD Styling
+  aslHudContainer: {
+    position: 'absolute',
+    top: 6,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    gap: 10,
+    zIndex: 10,
+  },
+  aslLetterCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: 'rgba(7, 24, 18, 0.94)',
+    borderWidth: 1.5,
+    borderColor: '#C8FF72',
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    shadowColor: '#C8FF72',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+  },
+  aslBadge: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: '#C8FF72',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  aslBadgeLetter: {
+    color: '#07110F',
+    fontSize: 26,
+    fontWeight: '900',
+  },
+  aslMeta: {
+    minWidth: 130,
+    gap: 5,
+  },
+  aslMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 6,
+  },
+  aslConfidenceText: {
+    color: '#F2FAF6',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  aslChipText: {
+    color: '#C8FF72',
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    backgroundColor: 'rgba(200, 255, 114, 0.16)',
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: 5,
+  },
+  aslProgressTrack: {
+    height: 5,
+    backgroundColor: 'rgba(255, 255, 255, 0.14)',
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  aslProgressFill: {
+    height: '100%',
+    backgroundColor: '#95E344',
+    borderRadius: 3,
+  },
+  aslProgressFillDone: {
+    backgroundColor: '#C8FF72',
+  },
+  aslPromptCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(5, 18, 14, 0.88)',
+    borderWidth: 1,
+    borderColor: 'rgba(200, 255, 114, 0.35)',
+    borderRadius: 99,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  aslPromptText: {
+    color: '#DCECE5',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  aslWordCard: {
+    backgroundColor: 'rgba(5, 20, 15, 0.95)',
+    borderWidth: 1,
+    borderColor: 'rgba(200, 255, 114, 0.45)',
+    borderRadius: 16,
+    padding: 12,
+    width: '100%',
+    alignSelf: 'center',
+  },
+  aslWordCardPanel: {
+    width: '100%',
+    padding: 14,
+    borderRadius: 20,
+    borderColor: 'rgba(200, 255, 114, 0.62)',
+    backgroundColor: 'rgba(5, 26, 17, 0.95)',
+  },
+  aslWordHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  aslWordLabel: {
+    color: '#769286',
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 1.1,
+  },
+  aslSpeakMiniBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#C8FF72',
+    borderRadius: 9,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  aslSpeakMiniBtnDisabled: { opacity: 0.45 },
+  aslHeaderActions: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  aslOverlayToggle: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: 'rgba(221,233,228,.12)', borderRadius: 9,
+    paddingHorizontal: 9, paddingVertical: 6,
+  },
+  aslOverlayToggleText: { color: '#DDE9E4', fontSize: 10, fontWeight: '800' },
+  aslSpeakMiniText: {
+    color: '#07110F',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  liveRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginTop: 6 },
+  liveLabel: { color: '#769286', fontSize: 9, fontWeight: '800', letterSpacing: 1.1 },
+  liveWord: { color: '#B7FF56', fontSize: 30, fontWeight: '900', letterSpacing: 0.4, textTransform: 'uppercase' },
+  liveWordEmpty: { color: '#4E6B5E' },
+  liveGuesses: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, flex: 1, justifyContent: 'flex-end' },
+  liveChip: { borderRadius: 999, borderWidth: 1, borderColor: '#2B4237', paddingHorizontal: 8, paddingVertical: 3 },
+  liveChipTop: { borderColor: '#B7FF56', backgroundColor: 'rgba(183,255,86,0.12)' },
+  liveChipText: { color: '#9EB5AA', fontSize: 11, fontWeight: '700' },
+  liveChipTextTop: { color: '#DFFFB0' },
+  aslWordText: {
+    color: '#F7FBF8',
+    fontSize: 24,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+    marginVertical: 8,
+    minHeight: 32,
+  },
+  aslWordTextEmpty: { color: '#8DA39A', fontWeight: '700' },
+  aslWordTextError: { color: '#FFB0A2', fontSize: 15, lineHeight: 21 },
+  aslCursor: {
+    color: '#C8FF72',
+    fontWeight: '400',
+  },
+  aslWordActions: {
+    flexDirection: 'row',
+    gap: 6,
+    marginTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.08)',
+    paddingTop: 9,
+  },
+  aslActionBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderRadius: 10,
+    paddingVertical: 9,
+  },
+  aslFinishBtn: { backgroundColor: '#B7FF56', flex: 1.6 },
+  aslFinishText: { color: '#07110F' },
+  aslActionClearBtn: {
+    backgroundColor: 'rgba(255, 130, 111, 0.12)',
+  },
+  aslActionText: {
+    color: '#DCEAE4',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  aslActionClearText: { color: '#FF826F' },
+  suggestionsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginVertical: 6,
+  },
+  suggestionChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#C8FF72',
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 8,
+  },
+  suggestionChipText: {
+    color: '#07110F',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+
+  // Shared Sight & What Changed Styling
+  campusAlertBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FFD043',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginTop: 10,
+    shadowColor: '#FFD043',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35,
+    shadowRadius: 6,
+  },
+  alertIconBadge: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(7, 17, 15, 0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  alertTextGroup: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  alertLoc: {
+    color: '#07110F',
+    fontSize: 11,
+    fontWeight: '900',
+  },
+  alertDesc: {
+    color: '#242111',
+    fontSize: 11,
+    fontWeight: '600',
+    flex: 1,
+  },
+  deltaNoticeCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#B7FF56',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 10,
+    shadowColor: '#B7FF56',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+  },
+  deltaIconGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  deltaNoticeLabel: {
+    color: '#07110F',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  deltaNoticeText: {
+    color: '#07110F',
+    fontSize: 12,
+    fontWeight: '700',
+    flex: 1,
+  },
+  deltaClose: {
+    padding: 4,
+  },
+  deltaControlText: {
+    color: '#B7FF56',
+  },
+  controlActive: {
+    backgroundColor: '#B7FF56',
+  },
+  pocketOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(7, 17, 15, 0.95)',
+    zIndex: 99,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  pocketBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(183, 255, 86, 0.15)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    marginBottom: 20,
+  },
+  pocketBadgeText: {
+    color: '#B7FF56',
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  pocketHeading: {
+    color: '#FFFFFF',
+    fontSize: 26,
+    fontWeight: '800',
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  pocketDetail: {
+    color: '#C3CDC2',
+    fontSize: 16,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 30,
+  },
+  pocketTapHint: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 12,
+    marginBottom: 24,
+  },
+  pocketTapText: {
+    color: '#DDE9E4',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  pocketExitBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  pocketExitText: {
+    color: '#8E9B8D',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+});

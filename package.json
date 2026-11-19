@@ -1,8 +1,11 @@
 {
-  "name": "guideband",
+  "name": "guideeye",
   "version": "0.1.0",
   "private": true,
-  "description": "Voice-first accessibility layer for Android, web and desktop",
+  "description": "Accessible AI companion for vision, hearing and nearby conversations",
+  "workspaces": [
+    "apps/mobile"
+  ],
   "desktopName": "GuideBand",
   "author": {
     "name": "GuideBand Team",
@@ -12,6 +15,11 @@
   "scripts": {
     "web": "npx serve web",
     "test": "python3 -m unittest discover -s backend/tests -v",
+    "mobile": "npm --workspace apps/mobile run start",
+    "mobile:ios": "npm --workspace apps/mobile run ios",
+    "mobile:typecheck": "npm --workspace apps/mobile run typecheck",
+    "mobile:test": "npm --workspace apps/mobile run test:unit",
+    "mobile:doctor": "npm --workspace apps/mobile run doctor",
     "desktop": "electron .",
     "dist:desktop": "electron-builder --publish never"
   },
