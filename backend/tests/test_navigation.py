@@ -37,6 +37,18 @@ async def fake_route(lat, lon, dest_lat, dest_lon):
 
 
 class HelperTests(unittest.TestCase):
+    def test_google_duration_and_route_steps(self):
+        self.assertEqual(navigation._seconds('125.5s'), 125.5)
+
+        async def response(*_):
+            return {'routes': [{'distanceMeters': 240, 'duration': '180s', 'polyline': {'encodedPolyline': 'abc'}, 'legs': [{'steps': [
+                {'navigationInstruction': {'instructions': 'Head north'}, 'startLocation': {'latLng': {'latitude': 1, 'longitude': 2}}, 'distanceMeters': 240},
+            ]}]}]}
+
+        with mock.patch.object(navigation, '_google_post', response):
+            route = run(navigation._find_google_route(*HOME, *SHOP))
+        self.assertEqual((route['provider'], route['steps'][0]['say'], route['polyline']), ('google', 'Head north.', 'abc'))
+
     def test_haversine(self):
         self.assertAlmostEqual(navigation.haversine(*HOME, *SHOP), 489, delta=3)
 

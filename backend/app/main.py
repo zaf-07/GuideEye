@@ -53,6 +53,9 @@ assistant = Assistant(memory, orders, navigator=navigator)
 class Command(BaseModel):
     text: str = Field(min_length=1, max_length=500)
 
+class SignSequence(BaseModel):
+    signs: list[str] = Field(min_length=1, max_length=12)
+
 class TaskCreate(BaseModel):
     title: str = Field(min_length=1, max_length=120)
     delay_minutes: int = Field(ge=0, le=1440)
@@ -70,12 +73,18 @@ async def read_image(image: UploadFile) -> bytes:
 
 async def detect(body: bytes) -> list[dict]:
     try:
-        return await asyncio.to_thread(vision.detector.detect, body)
+        detections = await asyncio.to_thread(vision.detector.detect, body)
+        return await asyncio.to_thread(vision.depth_estimator.annotate, body, detections)
     except vision.VisionError as error:
         raise HTTPException(422, str(error)) from error
 
 @app.get('/health')
 def health(): return {'status':'ok','time':now(),'raw_media_storage':False}
+
+@app.get('/maps/config')
+def maps_config():
+    """Browser map configuration. Restrict this key to approved web origins."""
+    return {'embed_key': os.getenv('GOOGLE_MAPS_BROWSER_API_KEY') or os.getenv('GOOGLE_MAPS_API_KEY', '')}
 
 @app.get('/system/status')
 def system_status():
@@ -83,12 +92,12 @@ def system_status():
     return {
         'wearable': band_view(),
         'modules': {'commands':'ready','journey':'demo','bridge':'ready','vision':vision.detector.status()['state']},
-        'vision': {'detector': vision.detector.status(), 'cloud_providers': vision.configured_providers(), 'model': llm.model()},
+        'vision': {'detector': vision.detector.status(), 'depth': vision.depth_estimator.status(), 'cloud_providers': vision.configured_providers(), 'model': llm.model()},
         'payments': {'mode': 'stripe_test' if is_test_key(stripe_key) else ('refused_live_key' if stripe_key else 'simulated'),
                      'menu': [{'item': name, 'price': money(cents)} for name, cents in CATALOGUE.values()]},
         'memory': {'notes': len(memory.notes(1000)), 'objects': len(memory.sightings()), 'path_points': len(memory.path()),
                    'connections': len(memory.graph_snapshot(1000)['edges']), 'supermemory': memory.remote_status()},
-        'navigation': {'maps': 'openstreetmap'},
+        'navigation': {'maps': 'google' if os.getenv('GOOGLE_MAPS_API_KEY') else 'openstreetmap'},
         'speech': {'voice': speech.provider() if speech.configured() else 'browser', 'transcription': speech.transcriber()},
         'messages': {'whatsapp': 'direct' if messaging.configured() else ('desktop_send' if messaging.desktop_enabled() else 'opens_whatsapp')},
     }
@@ -288,6 +297,12 @@ async def bridge_sign(images: list[UploadFile] = File(...)):
         raise HTTPException(503, 'Sign reading needs the cloud vision model')
     frames = [(await read_image(image), image.content_type) for image in images[:bridge.MAX_FRAMES]]
     return await bridge.read_sign(frames)
+
+@app.post('/bridge/translate')
+def bridge_translate(sequence: SignSequence):
+    """Translate one supported sequence of recognized ASL concepts."""
+    translation = bridge.translate_sequence(sequence.signs)
+    return {'signs': sequence.signs, 'translation': translation, 'supported': bool(translation)}
 
 # ---------- Band microphone ----------
 # scripts/band_assistant.py posts each sentence heard through the Vexo band here; the open

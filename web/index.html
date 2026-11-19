@@ -204,6 +204,10 @@
               <p class="stage-warning" id="liveWarning" aria-live="assertive"></p>
             </div>
             <p class="nav-status" id="navStatus" role="status"></p>
+            <section class="route-map" id="routeMap" hidden aria-label="Live walking route">
+              <div class="route-map-head"><strong>Live walking route</strong><button class="link-inline" id="routeMapClose" type="button">Hide map</button></div>
+              <iframe id="routeMapFrame" title="Google Maps walking directions" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
+            </section>
             <div class="live-controls">
               <div class="row wrap">
                 <button class="btn btn-primary" type="button" id="camBtn">Turn camera on</button>

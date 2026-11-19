@@ -201,3 +201,6 @@
 .zoom-step:active { transform: scale(.94); }
 .zoom-step:disabled { opacity: .45; cursor: default; filter: none; }
 .zoom-step:hover::after { opacity: 0; }
+.route-map { margin: .8rem 0; border: 1px solid rgba(255,255,255,.18); border-radius: 14px; overflow: hidden; background: rgba(8,15,25,.7); }
+.route-map-head { display:flex; justify-content:space-between; align-items:center; padding:.55rem .7rem; font-size:.9rem; }
+.route-map iframe { display:block; width:100%; min-height:280px; border:0; background:#162130; }

@@ -114,6 +114,15 @@ def document_body(
     return {
         'content': compose(text, kind, when, place, triples),
         'metadata': metadata,
+        # "dynamic", the default, holds a document back to group it with related
+        # ones before generating memories. Measured against the live API, a lone
+        # note sat in `dreamingStatus: dreaming` for over three minutes while its
+        # chunks were already indexed — and a memory that is not generated cannot
+        # be recalled. GuideBand is asked "where are my keys?" seconds after it
+        # saw them, so each note is processed on its own. It bills one extra
+        # operation per document; set SUPERMEMORY_DREAMING=dynamic to trade that
+        # latency back for the lower cost.
+        'dreaming': os.getenv('SUPERMEMORY_DREAMING', 'instant').strip() or 'instant',
         # The content is from when it was seen, not when it was uploaded, so
         # "20 minutes ago" resolves against the sighting.
         'date': _iso(when),

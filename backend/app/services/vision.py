@@ -13,7 +13,9 @@ httpx) are imported lazily so the rest of the backend runs without them.
 """
 import base64
 import os
+import sys
 import threading
+import time
 from io import BytesIO
 from pathlib import Path
 
@@ -28,16 +30,29 @@ HAZARD_LABELS = {
 }
 MIN_HAZARD_AREA = 0.03  # fraction of the frame
 MAX_WARNINGS = 3
+RETRY_SECONDS = 30
 
 SYSTEM_PROMPT = (
     'You are GuideBand, speaking through a wearable to a blind or low-vision person. '
     'Answer in one or two short sentences that sound natural when spoken aloud. '
     'Describe only what is actually visible in the image. '
     'Say where things are with words like ahead, left and right. '
-    'Never give distances in metres or feet and never say a path is safe or clear to walk. '
+    'Never give distances unless the on-device detector explicitly provides an estimated distance. '
+    'Never say a path is safe or clear to walk. '
     'If asked to read text, read it exactly. If you are not sure, say so plainly.'
 )
 DEFAULT_QUESTION = 'Briefly, what is in front of me?'
+
+DEPTH_MODEL_CONFIGS = {
+    'vits': {'encoder': 'vits', 'features': 64, 'out_channels': [48, 96, 192, 384]},
+    'vitb': {'encoder': 'vitb', 'features': 128, 'out_channels': [96, 192, 384, 768]},
+    'vitl': {'encoder': 'vitl', 'features': 256, 'out_channels': [256, 512, 1024, 1024]},
+}
+
+
+def setting(name: str, default: str = '') -> str:
+    """Read current Ultralytics-prefixed settings, with legacy fallback."""
+    return os.getenv(f'ULTRALYTICS_YOLO_{name}', os.getenv(f'YOLO_{name}', default))
 
 
 class VisionError(Exception):
@@ -71,13 +86,25 @@ def make_detection(label: str, confidence: float, box: list[float]) -> dict:
     }
 
 
+def add_distance(detection: dict, metres: float) -> None:
+    """Attach only a finite, plausible metric-depth reading."""
+    if 0.2 <= metres <= 20.0:
+        detection['distance_m'] = round(metres, 1)
+        detection['distance_confidence'] = 'estimated'
+
+
+def distance_phrase(item: dict) -> str:
+    metres = item.get('distance_m')
+    return f", about {metres:g} metres away" if metres is not None else ''
+
+
 def hazard_warnings(detections: list[dict]) -> list[str]:
-    """Short spoken warnings, largest object first. Position only, never distance."""
+    """Short spoken warnings; distances require a loaded metric-depth model."""
     hazards = [d for d in detections if d['label'] in HAZARD_LABELS and d['area'] >= MIN_HAZARD_AREA]
     hazards.sort(key=lambda d: d['area'], reverse=True)
     warnings: list[str] = []
     for item in hazards:
-        text = f"{item['label'].capitalize()} {item['position']}."
+        text = f"{item['label'].capitalize()} {item['position']}{distance_phrase(item)}."
         if text not in warnings:
             warnings.append(text)
         if len(warnings) == MAX_WARNINGS:
@@ -90,12 +117,17 @@ def local_description(detections: list[dict]) -> str:
     if not detections:
         return 'I do not recognise anything in view right now.'
     counts: dict[tuple[str, str], int] = {}
+    representatives: dict[tuple[str, str], dict] = {}
     for item in sorted(detections, key=lambda d: d['area'], reverse=True):
         key = (item['label'], item['position'])
         counts[key] = counts.get(key, 0) + 1
+        representatives.setdefault(key, item)
     parts = []
     for (label, position), count in list(counts.items())[:4]:
-        parts.append(f'{count} {label}s {position}' if count > 1 else f'a {label} {position}')
+        if count > 1:
+            parts.append(f'{count} {label}s {position}')
+        else:
+            parts.append(f'a {label} {position}{distance_phrase(representatives[(label, position)])}')
     listed = parts[0] if len(parts) == 1 else ', '.join(parts[:-1]) + ' and ' + parts[-1]
     return f'I can see {listed}. This is from the on-device detector only.'
 
@@ -106,27 +138,35 @@ class Detector:
     def __init__(self) -> None:
         self._model = None
         self._error: str | None = None
+        self._failed_at = 0.0
         self._lock = threading.Lock()
 
     @staticmethod
     def _weights() -> str:
-        configured = os.getenv('YOLO_MODEL')
+        configured = setting('MODEL')
         if configured:
             return configured
         bundled = Path(__file__).resolve().parents[2] / 'models' / 'yolo11n.pt'
-        # Ultralytics downloads the weights by name when no local file exists.
-        return str(bundled) if bundled.is_file() else 'yolo11n.pt'
+        # Supplying the full path lets Ultralytics cache a first download in
+        # the ignored backend model directory rather than the repository root.
+        bundled.parent.mkdir(parents=True, exist_ok=True)
+        return str(bundled)
 
     def _load(self):
-        if self._model is None and self._error is None:
-            if os.getenv('YOLO_ENABLED', 'true').lower() in {'0', 'false', 'no'}:
-                self._error = 'disabled by YOLO_ENABLED'
-                return None
-            try:
-                from ultralytics import YOLO
-                self._model = YOLO(self._weights())
-            except Exception as error:  # missing package, bad weights, no network
-                self._error = f'{type(error).__name__}: {error}'
+        if self._model is not None:
+            return self._model
+        if setting('ENABLED', 'true').lower() in {'0', 'false', 'no'}:
+            self._error = 'disabled by ULTRALYTICS_YOLO_ENABLED'
+            return None
+        if self._error and time.monotonic() - self._failed_at < RETRY_SECONDS:
+            return None
+        try:
+            from ultralytics import YOLO
+            self._model = YOLO(self._weights())
+            self._error = None
+        except Exception as error:
+            self._error = f'{type(error).__name__}: {error}'
+            self._failed_at = time.monotonic()
         return self._model
 
     def status(self) -> dict:
@@ -146,8 +186,8 @@ class Detector:
                 return []
             results = model.predict(
                 frame,
-                conf=float(os.getenv('YOLO_MIN_CONFIDENCE', '0.35')),
-                device=os.getenv('YOLO_DEVICE') or None,
+                conf=float(setting('MIN_CONFIDENCE', '0.35')),
+                device=setting('DEVICE') or None,
                 verbose=False,
             )
         detections = []
@@ -160,6 +200,87 @@ class Detector:
 
 
 detector = Detector()
+
+
+class DepthEstimator:
+    """Optional Depth Anything V2 metric-depth integration.
+
+    A monocular depth model must be explicitly configured with a local metric
+    checkpoint. Without it, no distance field is returned rather than guessing
+    from an object's bounding-box size.
+    """
+
+    def __init__(self) -> None:
+        self._model = None
+        self._error: str | None = None
+        self._lock = threading.Lock()
+
+    def _load(self):
+        if self._model is not None or self._error is not None:
+            return self._model
+        if os.getenv('DEPTH_ANYTHING_ENABLED', 'false').lower() in {'0', 'false', 'no'}:
+            self._error = 'disabled by DEPTH_ANYTHING_ENABLED'
+            return None
+        repo = Path(os.getenv('DEPTH_ANYTHING_REPO', ''))
+        checkpoint = Path(os.getenv('DEPTH_ANYTHING_CHECKPOINT', ''))
+        variant = os.getenv('DEPTH_ANYTHING_VARIANT', 'vits').lower()
+        if os.getenv('DEPTH_ANYTHING_MODE', '').lower() != 'metric':
+            self._error = 'DEPTH_ANYTHING_MODE must be metric'
+            return None
+        if not repo.is_dir() or not checkpoint.is_file() or variant not in DEPTH_MODEL_CONFIGS:
+            self._error = 'metric depth repository or checkpoint is unavailable'
+            return None
+        try:
+            import torch
+            if str(repo) not in sys.path:
+                sys.path.insert(0, str(repo))
+            from depth_anything_v2.dpt import DepthAnythingV2
+            model = DepthAnythingV2(**DEPTH_MODEL_CONFIGS[variant])
+            model.load_state_dict(torch.load(checkpoint, map_location='cpu'))
+            model.to(os.getenv('DEPTH_ANYTHING_DEVICE', 'cpu')).eval()
+            self._model = model
+        except Exception as error:
+            self._error = f'{type(error).__name__}: {error}'
+        return self._model
+
+    def status(self) -> dict:
+        state = 'ready' if self._model is not None else ('unavailable' if self._error else 'not_loaded')
+        return {'state': state, 'mode': os.getenv('DEPTH_ANYTHING_MODE', ''), 'error': self._error}
+
+    def annotate(self, image: bytes, detections: list[dict]) -> list[dict]:
+        if not detections:
+            return detections
+        try:
+            import numpy as np
+            from PIL import Image
+            frame = Image.open(BytesIO(image)).convert('RGB')
+        except Exception:
+            return detections
+        with self._lock:
+            model = self._load()
+            if model is None:
+                return detections
+            try:
+                depth = model.infer_image(np.asarray(frame), input_size=518)
+            except Exception as error:
+                self._error = f'{type(error).__name__}: {error}'
+                return detections
+        depth = np.asarray(depth, dtype=float)
+        if depth.shape != (frame.height, frame.width):
+            depth = np.asarray(Image.fromarray(depth.astype('float32')).resize(frame.size))
+        for item in detections:
+            x1, y1, x2, y2 = item['box']
+            # The lower-centre box area is less likely to sample sky or wall.
+            left, right = int((x1 * 0.7 + x2 * 0.3) * frame.width), int((x1 * 0.3 + x2 * 0.7) * frame.width)
+            top, bottom = int((y1 * 0.6 + y2 * 0.4) * frame.height), int(y2 * frame.height)
+            samples = depth[max(0, top):min(frame.height, bottom), max(0, left):min(frame.width, right)]
+            samples = samples[np.isfinite(samples) & (samples > 0)]
+            if samples.size:
+                add_distance(item, float(np.median(samples)))
+        return detections
+
+
+depth_estimator = DepthEstimator()
 
 
 # ---------- Cloud description ----------

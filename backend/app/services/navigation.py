@@ -1,4 +1,4 @@
-"""Walking directions from OpenStreetMap data.
+"""Walking directions with Google Maps when configured, OpenStreetMap otherwise.
 
 Place search and addresses come from Nominatim, walking routes from the public
 OSRM foot router. Distances here are map distances, so they may be spoken —
@@ -9,6 +9,7 @@ A route says where to walk. It never says that a street is safe to cross.
 from __future__ import annotations
 
 import math
+import os
 import re
 import time
 
@@ -16,6 +17,8 @@ USER_AGENT = {'User-Agent': 'GuideBand-hackathon-demo/0.3'}
 SEARCH_URL = 'https://nominatim.openstreetmap.org/search'
 REVERSE_URL = 'https://nominatim.openstreetmap.org/reverse'
 ROUTE_URL = 'https://routing.openstreetmap.de/routed-foot/route/v1/foot/{lon1},{lat1};{lon2},{lat2}'
+GOOGLE_PLACES_URL = 'https://places.googleapis.com/v1/places:searchText'
+GOOGLE_ROUTES_URL = 'https://routes.googleapis.com/directions/v2:computeRoutes'
 
 SEARCH_RADIUS_DEG = 0.035   # roughly 3-4 km around the user
 ANNOUNCE_WITHIN_M = 25      # speak a turn when this close to it
@@ -124,7 +127,7 @@ async def _get(url: str, params: dict) -> object:
         return response.json()
 
 
-async def find_place(term: str, lat: float, lon: float) -> dict | None:
+async def _find_osm_place(term: str, lat: float, lon: float) -> dict | None:
     """Nearest matching place around the user, or None."""
     r = SEARCH_RADIUS_DEG
     results = await _get(SEARCH_URL, {
@@ -153,12 +156,105 @@ async def geocode(text: str, lat: float | None = None, lon: float | None = None)
     return {'label': label, 'lat': float(best['lat']), 'lon': float(best['lon'])}
 
 
-async def find_route(lat: float, lon: float, dest_lat: float, dest_lon: float) -> dict:
+async def _find_osm_route(lat: float, lon: float, dest_lat: float, dest_lon: float) -> dict:
     data = await _get(ROUTE_URL.format(lon1=lon, lat1=lat, lon2=dest_lon, lat2=dest_lat),
                       {'steps': 'true', 'overview': 'false'})
     if data.get('code') != 'Ok' or not data.get('routes'):
         raise NavigationError('No walking route was found.')
     return build_route(data)
+
+
+def _google_headers(field_mask: str) -> dict[str, str]:
+    key = os.getenv('GOOGLE_MAPS_API_KEY', '')
+    if not key:
+        raise NavigationError('Google Maps is not configured.')
+    return {'Content-Type': 'application/json', 'X-Goog-Api-Key': key, 'X-Goog-FieldMask': field_mask}
+
+
+async def _google_post(url: str, payload: dict, field_mask: str) -> dict:
+    import httpx
+    async with httpx.AsyncClient(timeout=httpx.Timeout(12.0, connect=5.0)) as client:
+        response = await client.post(url, headers=_google_headers(field_mask), json=payload)
+        response.raise_for_status()
+        return response.json()
+
+
+async def _find_google_place(term: str, lat: float, lon: float) -> dict | None:
+    data = await _google_post(GOOGLE_PLACES_URL, {
+        'textQuery': term,
+        'locationBias': {'circle': {'center': {'latitude': lat, 'longitude': lon}, 'radius': 5000.0}},
+        'maxResultCount': 10,
+    }, 'places.displayName,places.location')
+    places = []
+    for item in data.get('places', []):
+        point = item.get('location', {})
+        if 'latitude' in point and 'longitude' in point:
+            places.append({'name': item.get('displayName', {}).get('text') or term,
+                           'lat': float(point['latitude']), 'lon': float(point['longitude'])})
+    if not places:
+        return None
+    for place in places:
+        place['distance_m'] = haversine(lat, lon, place['lat'], place['lon'])
+    return min(places, key=lambda place: place['distance_m'])
+
+
+def _seconds(value: str | int | float | None) -> float:
+    try:
+        return float(str(value or '0').removesuffix('s'))
+    except ValueError:
+        return 0.0
+
+
+async def _find_google_route(lat: float, lon: float, dest_lat: float, dest_lon: float) -> dict:
+    fields = ('routes.distanceMeters,routes.duration,routes.polyline.encodedPolyline,'
+              'routes.legs.steps.navigationInstruction.instructions,routes.legs.steps.startLocation,'
+              'routes.legs.steps.distanceMeters,routes.legs.steps.staticDuration')
+    data = await _google_post(GOOGLE_ROUTES_URL, {
+        'origin': {'location': {'latLng': {'latitude': lat, 'longitude': lon}}},
+        'destination': {'location': {'latLng': {'latitude': dest_lat, 'longitude': dest_lon}}},
+        'travelMode': 'WALK', 'languageCode': 'en-US', 'computeAlternativeRoutes': False,
+    }, fields)
+    routes = data.get('routes', [])
+    if not routes:
+        raise NavigationError('No walking route was found.')
+    route = routes[0]
+    steps = []
+    for step in route.get('legs', [{}])[0].get('steps', []):
+        point = step.get('startLocation', {}).get('latLng', {})
+        words = step.get('navigationInstruction', {}).get('instructions', '')
+        if 'latitude' not in point or 'longitude' not in point or not words:
+            continue
+        distance = float(step.get('distanceMeters', 0))
+        if steps and distance < 12:
+            continue
+        steps.append({'say': f'{words}.', 'lat': float(point['latitude']), 'lon': float(point['longitude']),
+                      'distance_m': distance})
+    return {'distance_m': float(route.get('distanceMeters', 0)), 'duration_s': _seconds(route.get('duration')),
+            'steps': steps, 'polyline': route.get('polyline', {}).get('encodedPolyline', ''), 'provider': 'google'}
+
+
+async def find_place(term: str, lat: float, lon: float) -> dict | None:
+    if os.getenv('GOOGLE_MAPS_API_KEY'):
+        try:
+            found = await _find_google_place(term, lat, lon)
+            if found is not None:
+                return found
+        except Exception:
+            pass
+    return await _find_osm_place(term, lat, lon)
+
+
+async def find_route(lat: float, lon: float, dest_lat: float, dest_lon: float) -> dict:
+    if os.getenv('GOOGLE_MAPS_API_KEY'):
+        try:
+            return await _find_google_route(lat, lon, dest_lat, dest_lon)
+        except NavigationError:
+            raise
+        except Exception:
+            pass
+    route = await _find_osm_route(lat, lon, dest_lat, dest_lon)
+    route['provider'] = 'openstreetmap'
+    return route
 
 
 _places: dict[tuple[float, float], str] = {}
@@ -224,7 +320,8 @@ class Navigator:
         except Exception as error:
             raise NavigationError('I could not reach the map service. Please try again.') from error
         self._active[session] = {'name': name, 'lat': dest_lat, 'lon': dest_lon, 'steps': route['steps'],
-                                 'next': 1, 'started': time.time()}
+                                 'next': 1, 'started': time.time(), 'provider': route.get('provider', 'openstreetmap'),
+                                 'polyline': route.get('polyline', '')}
         first = route['steps'][0]['say'] if route['steps'] else ''
         return (f'{name} is {spoken_distance(route["distance_m"])} away, about {spoken_minutes(route["duration_s"])} on foot. '
                 f'{first} I will tell you each turn. Directions do not mean a crossing is safe.')
