@@ -72,6 +72,62 @@ def compass(bearing: float) -> str:
     return ['north', 'northeast', 'east', 'southeast', 'south', 'southwest', 'west', 'northwest'][round(bearing / 45) % 8]
 
 
+def bearing(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    p1, p2, d = math.radians(lat1), math.radians(lat2), math.radians(lon2 - lon1)
+    y = math.sin(d) * math.cos(p2)
+    x = math.cos(p1) * math.sin(p2) - math.sin(p1) * math.cos(p2) * math.cos(d)
+    return (math.degrees(math.atan2(y, x)) + 360) % 360
+
+
+def relative_direction(heading: float, target: float) -> str:
+    diff = (target - heading + 540) % 360 - 180
+    if abs(diff) <= 25:
+        return 'straight ahead'
+    if abs(diff) >= 150:
+        return 'behind you'
+    side = 'right' if diff > 0 else 'left'
+    return f'ahead to your {side}' if abs(diff) < 70 else f'to your {side}'
+
+
+TURN_WORDS = re.compile(r'\b(turn|bear|keep|slight|sharp|make a)\b[^.]*?\b(left|right)\b')
+
+
+def turn_kind(say: str) -> str:
+    text = say.lower().split('. ')[0]
+    if 'arrived' in text:
+        return 'arrive'
+    if 'u-turn' in text or 'turn around' in text:
+        return 'uturn'
+    match = TURN_WORDS.search(text)
+    if not match:
+        return 'straight'
+    return f'slight-{match.group(2)}' if match.group(1) in ('bear', 'keep', 'slight') else match.group(2)
+
+
+def decode_polyline(encoded: str) -> list[list[float]]:
+    points, index, lat, lon = [], 0, 0, 0
+    try:
+        while index < len(encoded):
+            for axis in (0, 1):
+                shift = result = 0
+                while True:
+                    value = ord(encoded[index]) - 63
+                    index += 1
+                    result |= (value & 0x1f) << shift
+                    shift += 5
+                    if value < 0x20:
+                        break
+                delta = ~(result >> 1) if result & 1 else result >> 1
+                if axis == 0:
+                    lat += delta
+                else:
+                    lon += delta
+            points.append([lat / 1e5, lon / 1e5])
+    except IndexError:
+        pass
+    return points
+
+
 def destination_query(text: str) -> tuple[str, str]:
     """What the user asked for -> (search term, spoken name)."""
     match = DESTINATION.search(text.lower().strip())
@@ -114,7 +170,8 @@ def build_route(osrm: dict) -> dict:
         if steps and step['maneuver'].get('type') != 'arrive' and step.get('distance', 0) < 12:
             continue
         steps.append({'say': instruction(step), 'lat': lat, 'lon': lon, 'distance_m': step.get('distance', 0)})
-    return {'distance_m': route['distance'], 'duration_s': route['duration'], 'steps': steps}
+    path = [[lat, lon] for lon, lat in route.get('geometry', {}).get('coordinates', [])]
+    return {'distance_m': route['distance'], 'duration_s': route['duration'], 'steps': steps, 'path': path}
 
 
 # ---------- Network ----------
@@ -158,7 +215,7 @@ async def geocode(text: str, lat: float | None = None, lon: float | None = None)
 
 async def _find_osm_route(lat: float, lon: float, dest_lat: float, dest_lon: float) -> dict:
     data = await _get(ROUTE_URL.format(lon1=lon, lat1=lat, lon2=dest_lon, lat2=dest_lat),
-                      {'steps': 'true', 'overview': 'false'})
+                      {'steps': 'true', 'overview': 'full', 'geometries': 'geojson'})
     if data.get('code') != 'Ok' or not data.get('routes'):
         raise NavigationError('No walking route was found.')
     return build_route(data)
@@ -227,10 +284,14 @@ async def _find_google_route(lat: float, lon: float, dest_lat: float, dest_lon: 
         distance = float(step.get('distanceMeters', 0))
         if steps and distance < 12:
             continue
-        steps.append({'say': f'{words}.', 'lat': float(point['latitude']), 'lon': float(point['longitude']),
+        spoken = '. '.join(part.strip().rstrip('.') for part in words.splitlines() if part.strip())
+        steps.append({'say': f'{spoken}.', 'lat': float(point['latitude']), 'lon': float(point['longitude']),
                       'distance_m': distance})
+    if steps:
+        steps.append({'say': 'You have arrived.', 'lat': dest_lat, 'lon': dest_lon, 'distance_m': 0.0})
+    polyline = route.get('polyline', {}).get('encodedPolyline', '')
     return {'distance_m': float(route.get('distanceMeters', 0)), 'duration_s': _seconds(route.get('duration')),
-            'steps': steps, 'polyline': route.get('polyline', {}).get('encodedPolyline', ''), 'provider': 'google'}
+            'steps': steps, 'polyline': polyline, 'path': decode_polyline(polyline), 'provider': 'google'}
 
 
 async def find_place(term: str, lat: float, lon: float) -> dict | None:
@@ -321,10 +382,34 @@ class Navigator:
             raise NavigationError('I could not reach the map service. Please try again.') from error
         self._active[session] = {'name': name, 'lat': dest_lat, 'lon': dest_lon, 'steps': route['steps'],
                                  'next': 1, 'started': time.time(), 'provider': route.get('provider', 'openstreetmap'),
-                                 'polyline': route.get('polyline', '')}
+                                 'polyline': route.get('polyline', ''), 'path': route.get('path') or [],
+                                 'distance_m': route.get('distance_m', 0), 'fix': (lat, lon), 'heading': None}
         first = route['steps'][0]['say'] if route['steps'] else ''
         return (f'{name} is {spoken_distance(route["distance_m"])} away, about {spoken_minutes(route["duration_s"])} on foot. '
                 f'{first} I will tell you each turn. Directions do not mean a crossing is safe.')
+
+    @staticmethod
+    def _track(state: dict, lat: float, lon: float) -> None:
+        last = state.get('fix')
+        if last is None:
+            state['fix'] = (lat, lon)
+        elif haversine(*last, lat, lon) >= 5:
+            state['heading'] = bearing(*last, lat, lon)
+            state['fix'] = (lat, lon)
+
+    @staticmethod
+    def _next(state: dict, lat: float, lon: float) -> dict:
+        steps, index = state['steps'], state['next']
+        if index < len(steps) - 1:
+            step = steps[index]
+            say, kind, turn_lat, turn_lon = step['say'], turn_kind(step['say']), step['lat'], step['lon']
+        else:
+            say, kind, turn_lat, turn_lon = f'{state["name"]} is ahead.', 'arrive', state['lat'], state['lon']
+        distance = haversine(lat, lon, turn_lat, turn_lon)
+        heading = state.get('heading')
+        relative = relative_direction(heading, bearing(lat, lon, turn_lat, turn_lon)) if heading is not None else ''
+        return {'index': index, 'say': say, 'turn': kind, 'distance_m': round(distance),
+                'distance': spoken_distance(distance), 'relative': relative, 'lat': turn_lat, 'lon': turn_lon}
 
     def update(self, session: str, lat: float, lon: float) -> dict:
         """Call with each GPS fix. `say` is set only when there is something new to speak."""
@@ -336,10 +421,39 @@ class Navigator:
         if remaining <= ARRIVE_WITHIN_M:
             del self._active[session]
             return {**result, 'active': False, 'say': f'You have arrived at {state["name"]}.'}
+        self._track(state, lat, lon)
         steps, index = state['steps'], state['next']
         if index < len(steps) - 1:  # the last step is the arrival, handled above
             step = steps[index]
             if haversine(lat, lon, step['lat'], step['lon']) <= ANNOUNCE_WITHIN_M:
                 state['next'] = index + 1
                 result['say'] = step['say']
+        result.update(remaining_m=round(remaining), total_m=round(state.get('distance_m') or 0),
+                      heading=state.get('heading'), next=self._next(state, lat, lon))
         return result
+
+    def next_turn(self, session: str, lat: float, lon: float) -> str | None:
+        state = self._active.get(session)
+        if state is None:
+            return None
+        self._track(state, lat, lon)
+        upcoming = self._next(state, lat, lon)
+        remaining = spoken_distance(haversine(lat, lon, state['lat'], state['lon']))
+        where = f' It is {upcoming["relative"]}.' if upcoming['relative'] else ''
+        if upcoming['turn'] == 'arrive':
+            return f'No more turns. {state["name"]} is {remaining} away.{where}'
+        action = upcoming['say'].split('. ')[0].rstrip('.')
+        action = action[0].lower() + action[1:]
+        lead = 'Now' if upcoming['distance_m'] <= ANNOUNCE_WITHIN_M else f'In {upcoming["distance"]}'
+        return f'{lead}, {action}.{where} {remaining} to {state["name"]} in total.'
+
+    def snapshot(self, session: str) -> dict:
+        state = self._active.get(session)
+        if state is None:
+            return {'active': False}
+        steps = [{'say': step['say'], 'turn': turn_kind(step['say']), 'lat': step['lat'], 'lon': step['lon'],
+                  'distance_m': round(step.get('distance_m', 0))} for step in state['steps']]
+        path = state.get('path') or [[step['lat'], step['lon']] for step in state['steps']] + [[state['lat'], state['lon']]]
+        return {'active': True, 'destination': {'name': state['name'], 'lat': state['lat'], 'lon': state['lon']},
+                'provider': state.get('provider', 'openstreetmap'), 'distance_m': round(state.get('distance_m') or 0),
+                'next': state['next'], 'steps': steps, 'path': path}

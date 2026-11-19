@@ -215,6 +215,10 @@ async def location_update(lat: float = Form(..., ge=-90, le=90), lon: float = Fo
         memory.visit(await navigation.place_name(lat, lon))
     return navigator.update(session, lat, lon)
 
+@app.get('/navigation/route')
+def navigation_route(session: str = 'default'):
+    return navigator.snapshot(session)
+
 # ---------- Family contacts ----------
 
 @app.get('/contacts')

@@ -111,7 +111,6 @@
     el('apiInput').value = location.origin;
     checkService();
   };
-  el('routeMapClose').onclick = () => { mapDestination = null; el('routeMap').hidden = true; el('routeMapFrame').src = 'about:blank'; };
 
   function mapDistance(a, b) {
     if (!a || !b) return Infinity;
@@ -124,19 +123,155 @@
     if (!force && Date.now() - mapLastRendered < 15000 && mapDistance(position, mapOrigin) < 20) return;
     const params = new URLSearchParams({ key: mapsEmbedKey, origin: `${position.lat},${position.lon}`, destination: `${mapDestination.lat},${mapDestination.lon}`, mode: 'walking' });
     el('routeMapFrame').src = 'https://www.google.com/maps/embed/v1/directions?' + params;
-    el('routeMap').hidden = false;
     mapOrigin = { ...position }; mapLastRendered = Date.now();
   }
-  function showRouteMap(mapUrl) {
-    try {
-      const route = new URL(mapUrl);
-      const destination = route.searchParams.get('destination');
-      if (!destination) return;
-      const [lat, lon] = destination.split(',').map(Number);
-      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
-      mapDestination = { lat, lon }; renderRouteMap(true);
-    } catch {}
+
+  const guide = { route: null, nav: null, map: null, line: null, me: null, turnMark: null, destMark: null, follow: false, mode: '', loading: null, hideTimer: 0 };
+  const firstSentence = text => (text || '').split('. ')[0].replace(/\.$/, '');
+  const MAP_STYLE = [
+    { featureType: 'poi', elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
+    { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+    { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#ffffff' }] },
+    { featureType: 'road', elementType: 'labels.text.fill', stylers: [{ color: '#33443c' }] },
+    { featureType: 'landscape', stylers: [{ color: '#eef3ef' }] },
+    { featureType: 'water', stylers: [{ color: '#bcdcf5' }] },
+  ];
+  function loadGoogleMaps() {
+    if (window.google?.maps?.Map) return Promise.resolve();
+    if (!mapsEmbedKey) return Promise.reject(new Error('no key'));
+    if (!guide.loading) guide.loading = new Promise((resolve, reject) => {
+      window.__guideMapReady = resolve;
+      window.gm_authFailure = () => { guide.mode = 'embed'; guide.map = null; showEmbedMap(); };
+      const script = document.createElement('script');
+      script.src = 'https://maps.googleapis.com/maps/api/js?key=' + encodeURIComponent(mapsEmbedKey) + '&v=weekly&loading=async&callback=__guideMapReady';
+      script.async = true;
+      script.onerror = () => reject(new Error('blocked'));
+      document.head.append(script);
+      setTimeout(() => reject(new Error('timeout')), 8000);
+    });
+    return guide.loading;
   }
+  function showEmbedMap() {
+    el('routeCanvas').hidden = true;
+    el('routeCanvas').replaceChildren();
+    el('routeMapFrame').hidden = !mapsEmbedKey;
+    el('routeView').hidden = !mapsEmbedKey;
+    el('routeRecenter').hidden = el('routeOverview').hidden = true;
+    renderRouteMap(true);
+  }
+  async function drawGuideMap() {
+    const route = guide.route;
+    if (guide.mode === 'embed') return showEmbedMap();
+    try { await loadGoogleMaps(); } catch { guide.mode = 'embed'; return showEmbedMap(); }
+    if (guide.route !== route || guide.mode === 'embed') return;
+    const g = google.maps;
+    el('routeView').hidden = false; el('routeCanvas').hidden = false; el('routeMapFrame').hidden = true; el('routeMapFrame').src = 'about:blank';
+    el('routeRecenter').hidden = el('routeOverview').hidden = false;
+    if (!guide.map) {
+      guide.map = new g.Map(el('routeCanvas'), { center: { lat: route.destination.lat, lng: route.destination.lon }, zoom: 17, disableDefaultUI: true, zoomControl: true, gestureHandling: 'greedy', clickableIcons: false, styles: MAP_STYLE });
+      guide.map.addListener('dragstart', () => { guide.follow = false; });
+      guide.line = new g.Polyline({ map: guide.map, strokeColor: '#0a6a45', strokeOpacity: .95, strokeWeight: 7 });
+      guide.destMark = new g.Marker({ map: guide.map, zIndex: 3 });
+      guide.turnMark = new g.Marker({ map: guide.map, zIndex: 5, icon: { path: g.SymbolPath.CIRCLE, scale: 9, fillColor: '#ffffff', fillOpacity: 1, strokeColor: '#e8590c', strokeWeight: 5 } });
+      guide.me = new g.Marker({ map: guide.map, zIndex: 10 });
+    }
+    guide.mode = 'google';
+    guide.line.setPath(route.path.map(([lat, lng]) => ({ lat, lng })));
+    guide.destMark.setPosition({ lat: route.destination.lat, lng: route.destination.lon });
+    guide.destMark.setTitle(route.destination.name);
+    const next = route.steps[route.next] || route.destination;
+    guide.turnMark.setPosition({ lat: next.lat, lng: next.lon });
+    placeMe();
+    fitGuideRoute();
+  }
+  function fitGuideRoute() {
+    if (guide.mode !== 'google' || !guide.map || !guide.route) return;
+    const bounds = new google.maps.LatLngBounds();
+    guide.route.path.forEach(([lat, lng]) => bounds.extend({ lat, lng }));
+    if (position) bounds.extend({ lat: position.lat, lng: position.lon });
+    guide.follow = false;
+    guide.map.fitBounds(bounds, 48);
+  }
+  function placeMe() {
+    if (guide.mode !== 'google' || !guide.map || !position) return;
+    const g = google.maps, at = { lat: position.lat, lng: position.lon }, heading = guide.nav?.heading;
+    guide.me.setPosition(at);
+    guide.me.setIcon(heading == null
+      ? { path: g.SymbolPath.CIRCLE, scale: 9, fillColor: '#1a73e8', fillOpacity: 1, strokeColor: '#ffffff', strokeWeight: 3 }
+      : { path: g.SymbolPath.FORWARD_CLOSED_ARROW, rotation: heading, scale: 7, fillColor: '#1a73e8', fillOpacity: 1, strokeColor: '#ffffff', strokeWeight: 2 });
+    if (guide.follow) guide.map.panTo(at);
+  }
+  function showTurn(next, nav) {
+    el('routeArrow').dataset.turn = next.turn;
+    el('routeDistance').textContent = !next.distance ? 'Next' : next.distance_m <= 25 ? 'Now' : 'In ' + next.distance;
+    el('routeSay').textContent = firstSentence(next.say);
+    el('routeRelative').textContent = next.relative ? 'It is ' + next.relative : '';
+    [...el('routeSteps').children].forEach((item, i) => { item.classList.toggle('done', i < next.index); item.classList.toggle('current', i === next.index); });
+    if (nav) {
+      el('routeRemaining').textContent = nav.remaining + ' to go';
+      const done = nav.total_m ? Math.min(1, Math.max(0, 1 - nav.remaining_m / nav.total_m)) : 0;
+      el('routeBar').style.width = Math.round(done * 100) + '%';
+    }
+    if (guide.mode === 'google' && guide.turnMark && Number.isFinite(next.lat)) guide.turnMark.setPosition({ lat: next.lat, lng: next.lon });
+  }
+  async function openGuide() {
+    let route;
+    try { route = await call('/navigation/route?session=' + session); } catch { return; }
+    if (!route.active) return closeGuide();
+    clearTimeout(guide.hideTimer);
+    guide.route = route; guide.nav = null;
+    mapDestination = { lat: route.destination.lat, lon: route.destination.lon };
+    el('routeDest').textContent = route.destination.name;
+    el('routeRemaining').textContent = '';
+    el('routeBar').style.width = '0%';
+    el('routeSteps').replaceChildren(...route.steps.map(step => { const item = document.createElement('li'); item.textContent = step.say; return item; }));
+    el('routeMap').classList.remove('arrived');
+    el('routeMap').hidden = false;
+    const next = route.steps[route.next] || { say: route.destination.name + ' is ahead.', turn: 'arrive' };
+    showTurn({ ...next, index: route.next, distance: '', relative: '' });
+    drawGuideMap();
+    reportLocation(true);
+  }
+  function closeGuide() {
+    clearTimeout(guide.hideTimer);
+    guide.route = guide.nav = null; mapDestination = null;
+    el('routeMap').hidden = true;
+    el('routeMapFrame').src = 'about:blank';
+  }
+  function updateGuide(nav) {
+    if (nav.active && nav.next) {
+      if (!guide.route) return void openGuide();
+      guide.nav = nav;
+      showTurn(nav.next, nav);
+      placeMe();
+      if (guide.mode === 'embed') renderRouteMap();
+      if (nav.say) { el('routeTurn').classList.remove('pulse'); void el('routeTurn').offsetWidth; el('routeTurn').classList.add('pulse'); }
+    } else if (guide.route && nav.say) {
+      el('routeArrow').dataset.turn = 'arrive';
+      el('routeDistance').textContent = 'Arrived';
+      el('routeSay').textContent = nav.say;
+      el('routeRelative').textContent = '';
+      el('routeRemaining').textContent = '';
+      el('routeBar').style.width = '100%';
+      el('routeMap').classList.add('arrived');
+      guide.route = null;
+      guide.hideTimer = setTimeout(closeGuide, 12000);
+    } else if (guide.route) closeGuide();
+  }
+  el('routeAsk').onclick = () => ask('Which way do I turn?');
+  el('routeStop').onclick = () => ask('Stop navigation');
+  el('routeOverview').onclick = fitGuideRoute;
+  el('routeRecenter').onclick = () => {
+    if (guide.mode !== 'google' || !guide.map || !position) return;
+    guide.follow = true;
+    guide.map.setZoom(18);
+    placeMe();
+  };
+  el('routeMapClose').onclick = () => {
+    const hidden = el('routeMap').classList.toggle('no-map');
+    el('routeMapClose').textContent = hidden ? 'Show map' : 'Hide map';
+    if (!hidden) fitGuideRoute();
+  };
   el('apiForm').onsubmit = e => {
     e.preventDefault();
     const value = el('apiInput').value.trim().replace(/\/$/, '');
@@ -452,10 +587,7 @@
       item.append(link);
       window.open(reply.open_url, '_blank', 'noopener');
     }
-    if (reply.map_url) {
-      showRouteMap(reply.map_url);
-      if (!mapsEmbedKey) addMessage('guide', 'The route is active. Enable Google Maps Embed API to show the companion map here.');
-    }
+    if (reply.map_url) openGuide();
     if (reply.timer) {
       const { seconds, label } = reply.timer;
       setTimeout(() => {
@@ -465,7 +597,7 @@
         buzz([300, 120, 300, 120, 300]);
       }, seconds * 1000);
     }
-    if (reply.intent === 'nav_stop' || (reply.intent === 'navigate' && !reply.navigating)) el('navStatus').textContent = '';
+    if (reply.intent === 'nav_stop' || (reply.intent === 'navigate' && !reply.navigating)) { el('navStatus').textContent = ''; closeGuide(); }
     if (reply.navigating) el('navStatus').textContent = 'Directions are on. Keep walking — I will speak each turn.';
     if (reply.intent === 'bridge') selectTab('bridge');
     if (activeTab === 'memory') loadMemory();
@@ -845,12 +977,15 @@
   function onPosition(fix) {
     const first = !position;
     position = { lat: fix.coords.latitude, lon: fix.coords.longitude };
-    renderRouteMap();
+    placeMe();
     if (first) {
       refreshPermissions();
       if (retryWithLocation) { const again = retryWithLocation; retryWithLocation = ''; ask(again); }
     }
-    if (!online || Date.now() - lastSent < 4000) return;
+    reportLocation();
+  }
+  function reportLocation(force = false) {
+    if (!online || !position || (!force && Date.now() - lastSent < (guide.route ? 2000 : 4000))) return;
     lastSent = Date.now();
     const body = new FormData();
     addLocation(body);
@@ -859,6 +994,7 @@
       if (nav.active) el('navStatus').textContent = 'Walking to ' + nav.destination + ' · ' + nav.remaining + ' to go';
       else if (nav.say) el('navStatus').textContent = '';
       if (nav.say) { addMessage('guide', nav.say, 'directions'); speak(nav.say); buzz([200, 100, 200]); }
+      updateGuide(nav);
     }).catch(() => {});
   }
   el('locationToggle').onchange = () => {

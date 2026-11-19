@@ -98,6 +98,42 @@ class NavigatorTests(unittest.TestCase):
         self.assertEqual((arrived['say'], arrived['active']), ('You have arrived at Safeway.', False))
         self.assertEqual(nav.update('s', *SHOP), {'active': False, 'say': None})
 
+    def test_update_describes_the_next_turn_for_the_map(self):
+        nav = Navigator(fake_place, fake_route)
+        run(nav.start('s', 'Take me to the nearest supermarket', *HOME))
+        walking = nav.update('s', 37.7612, HOME[1])
+        self.assertEqual((walking['next']['turn'], walking['next']['index'], walking['total_m']), ('left', 1, 490))
+        self.assertEqual(walking['next']['relative'], 'straight ahead')
+        self.assertEqual(nav.update('s', *CORNER)['next']['turn'], 'arrive')
+
+    def test_which_way_answers_with_distance_and_side(self):
+        nav = Navigator(fake_place, fake_route)
+        self.assertIsNone(nav.next_turn('s', *HOME))
+        run(nav.start('s', 'Take me to the nearest supermarket', *HOME))
+        answer = nav.next_turn('s', 37.7612, HOME[1])
+        self.assertTrue(answer.startswith('In 600 feet, turn left onto Illinois Street. It is straight ahead.'), answer)
+        nav.update('s', *CORNER)
+        self.assertIn('No more turns. Safeway is', nav.next_turn('s', *CORNER))
+
+    def test_snapshot_has_a_path_steps_and_turn_arrows(self):
+        nav = Navigator(fake_place, fake_route)
+        self.assertEqual(nav.snapshot('s'), {'active': False})
+        run(nav.start('s', 'Take me to the nearest supermarket', *HOME))
+        shot = nav.snapshot('s')
+        self.assertEqual([step['turn'] for step in shot['steps']], ['straight', 'left', 'arrive'])
+        self.assertEqual((shot['path'][0], shot['path'][-1], shot['destination']['name']), (list(HOME), list(SHOP), 'Safeway'))
+
+    def test_turn_kind_relative_direction_and_polyline(self):
+        self.assertEqual(navigation.turn_kind('Turn right onto Mowry Ave. Destination will be on the left.'), 'right')
+        self.assertEqual(navigation.turn_kind('Continue straight. Destination will be on the left.'), 'straight')
+        self.assertEqual(navigation.turn_kind('Bear left onto 3rd Street.'), 'slight-left')
+        self.assertEqual(navigation.turn_kind('Turn around. Then continue for 50 feet.'), 'uturn')
+        self.assertEqual(navigation.relative_direction(0, 90), 'to your right')
+        self.assertEqual(navigation.relative_direction(350, 310), 'ahead to your left')
+        self.assertEqual(navigation.relative_direction(90, 270), 'behind you')
+        self.assertEqual(navigation.decode_polyline('_p~iF~ps|U_ulLnnqC_mqNvxq`@'),
+                         [[38.5, -120.2], [40.7, -120.95], [43.252, -126.453]])
+
     def test_unknown_place_and_stop(self):
         nav = Navigator(no_place, fake_route)
         with self.assertRaises(navigation.NavigationError):
@@ -150,6 +186,14 @@ class AssistantNavigationTests(unittest.TestCase):
         self.assertTrue(reply['navigating'])
         self.assertIn('Safeway is', reply['say'])
         self.assertEqual(run(self.assistant.respond('s', 'Stop navigation'))['say'], 'Navigation stopped.')
+
+    def test_which_way_is_answered_only_while_navigating(self):
+        self.assertNotEqual(run(self.assistant.respond('s', 'Which way do I turn?', location=HOME))['intent'], 'nav_next')
+        run(self.assistant.respond('s', 'Take me to Safeway', location=HOME))
+        reply = run(self.assistant.respond('s', 'Which way do I turn?', location=HOME))
+        self.assertEqual((reply['intent'], reply['navigating']), ('nav_next', True))
+        self.assertIn('turn left onto Illinois Street', reply['say'])
+        self.assertIn('turn location on', run(self.assistant.respond('s', 'How far is it?'))['say'])
 
     def test_take_me_back_uses_the_walked_path(self):
         self.assertIn('close to where you started', run(self.assistant.respond('s', 'Take me back', location=HOME))['say'])
