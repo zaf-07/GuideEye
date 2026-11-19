@@ -333,6 +333,60 @@
   if (bridgeBtn && bridgeDialog) {
     bridgeBtn.onclick = () => bridgeDialog.showModal();
     $('#bridgeSpeakBtn').onclick = () => speak($('#bridgeInput').value);
+
+    const bridgeListenBtn = $('#bridgeListenBtn');
+    const bridgeCaption = $('#bridgeCaption');
+    let bridgeRecognizer = null;
+    let bridgeCaptionsOn = false;
+
+    const setBridgeCaption = text => {
+      if (bridgeCaption) bridgeCaption.textContent = text;
+    };
+    const stopBridgeCaptions = () => {
+      bridgeCaptionsOn = false;
+      bridgeRecognizer?.stop();
+      bridgeRecognizer = null;
+      bridgeListenBtn.textContent = 'Start Captions';
+    };
+    const startBridgeCaptions = () => {
+      const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!Recognition) {
+        setBridgeCaption('Live captions are not available in this browser. Try Chrome.');
+        return;
+      }
+      bridgeCaptionsOn = true;
+      bridgeListenBtn.textContent = 'Stop Captions';
+      setBridgeCaption('Listening…');
+
+      bridgeRecognizer = new Recognition();
+      bridgeRecognizer.lang = 'en-US';
+      bridgeRecognizer.continuous = true;
+      bridgeRecognizer.interimResults = true;
+      bridgeRecognizer.onresult = event => {
+        const transcript = [...event.results]
+          .slice(event.resultIndex)
+          .map(result => result[0].transcript)
+          .join('');
+        setBridgeCaption(transcript ? `Caption: ${transcript}` : 'Listening…');
+      };
+      bridgeRecognizer.onerror = event => {
+        if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+          bridgeCaptionsOn = false;
+          bridgeListenBtn.textContent = 'Start Captions';
+          setBridgeCaption('Microphone permission is required for live captions.');
+        } else if (event.error !== 'aborted') {
+          setBridgeCaption(`Captions paused: ${event.error}.`);
+        }
+      };
+      bridgeRecognizer.onend = () => {
+        if (bridgeCaptionsOn && bridgeDialog.open) {
+          try { bridgeRecognizer.start(); } catch (_) {}
+        }
+      };
+      try { bridgeRecognizer.start(); } catch (_) { setBridgeCaption('Could not start captions. Please try again.'); }
+    };
+    bridgeListenBtn.onclick = () => bridgeCaptionsOn ? stopBridgeCaptions() : startBridgeCaptions();
+    bridgeDialog.addEventListener('close', stopBridgeCaptions);
   }
 
   // --- Guardian Toggle ---
