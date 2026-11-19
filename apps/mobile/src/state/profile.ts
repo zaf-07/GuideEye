@@ -27,6 +27,8 @@ export interface Profile {
   /** Keep the memory graph on-device only. */
   localOnlyMemory: boolean;
   nearbyDiscovery: boolean;
+  /** Blind / low-vision: the microphone stays on and “Guide, …” works from every screen. */
+  voiceControl: boolean;
   displayName?: string;
   onboardedAt?: string;
 }
@@ -42,6 +44,7 @@ export const DEFAULT_PROFILE: Profile = {
   // the person between devices. Settings still turns it off in one tap.
   localOnlyMemory: false,
   nearbyDiscovery: false,
+  voiceControl: true,
 };
 
 export const hasVisionTrack = (p: Profile) =>

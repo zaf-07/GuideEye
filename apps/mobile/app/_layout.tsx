@@ -7,6 +7,7 @@ import { NearbyPrompt } from '../components/NearbyPrompt';
 import { loadApiUrl } from '../src/api';
 import { initIdentity } from '../src/sightIdentity';
 import { ProfileProvider } from '../src/state/ProfileContext';
+import { VoiceProvider } from '../src/voice/VoiceControl';
 import { colors } from '../src/theme/tokens';
 
 const ignoredTfliteNotice = 'Created TensorFlow Lite';
@@ -61,6 +62,7 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <ProfileProvider>
+        <VoiceProvider>
         <StatusBar style="light" />
         <Stack
           screenOptions={{
@@ -70,6 +72,7 @@ export default function RootLayout() {
           }}
         />
         <NearbyPrompt />
+        </VoiceProvider>
       </ProfileProvider>
     </SafeAreaProvider>
   );

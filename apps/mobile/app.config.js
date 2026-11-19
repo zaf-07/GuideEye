@@ -17,9 +17,9 @@ module.exports = {
         NSCameraUsageDescription:
           'GuideEye uses the camera to describe your surroundings, warn about obstacles, and read sign language. Frames are never stored.',
         NSMicrophoneUsageDescription:
-          "GuideEye listens so another person's speech can be captioned and translated into sign language.",
+          "GuideEye listens for your voice commands, and so another person's speech can be captioned and translated into sign language.",
         NSSpeechRecognitionUsageDescription:
-          'GuideEye transcribes speech so it can be shown as captions and signed back to you.',
+          'GuideEye transcribes speech to understand your voice commands, and so speech can be shown as captions and signed back to you.',
         NSLocationWhenInUseUsageDescription:
           'GuideEye uses your location and heading to guide you along pavements, crossings and traffic.',
         NSMotionUsageDescription:
@@ -63,8 +63,8 @@ module.exports = {
       [
         'expo-speech-recognition',
         {
-          microphonePermission: 'Allow GuideEye to use the microphone for Bridge replies.',
-          speechRecognitionPermission: 'Allow GuideEye to turn spoken Bridge replies into text.',
+          microphonePermission: 'Allow GuideEye to use the microphone for voice commands and Bridge replies.',
+          speechRecognitionPermission: 'Allow GuideEye to understand your voice commands and turn spoken Bridge replies into text.',
         },
       ],
       [

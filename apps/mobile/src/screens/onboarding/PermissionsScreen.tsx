@@ -6,6 +6,7 @@ import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { Button, Display, GlassCard, Progress, Screen, Text } from '../../components';
 import { TOTAL_STEPS, useDraft } from './draft';
+import { ExpoSpeechRecognitionModule } from '../../speechRecognition';
 import { hasHearingTrack, hasVisionTrack } from '../../state/profile';
 import { colors, radius, spacing } from '../../theme/tokens';
 
@@ -25,6 +26,7 @@ export function PermissionsScreen() {
     perms.push(
       { icon: 'camera-outline', title: 'Camera', why: 'Reads the scene in front of you and warns about what is ahead.' },
       { icon: 'navigate-outline', title: 'Location & motion', why: 'Keeps you on the path, and knows which way you are facing at a crossing.' },
+      { icon: 'mic-outline', title: 'Microphone', why: 'Hears your voice commands, so you can run GuideEye by saying “Guide” and what you need.' },
     );
   }
   if (hasHearingTrack(draft)) {
@@ -41,6 +43,9 @@ export function PermissionsScreen() {
     try {
       const results = [await Camera.requestCameraPermissionsAsync()];
       if (hasHearingTrack(draft)) results.push(await Camera.requestMicrophonePermissionsAsync());
+      if (hasVisionTrack(draft)) {
+        await ExpoSpeechRecognitionModule.requestPermissionsAsync().catch(() => null);
+      }
       if (hasVisionTrack(draft) || draft.nearbyDiscovery) results.push(await Location.requestForegroundPermissionsAsync());
       if (results.some((result) => result.status !== 'granted')) {
         Alert.alert('Some access was not allowed', 'GuideEye will keep working and explain how to enable each feature later.');
