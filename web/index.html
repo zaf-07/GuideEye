@@ -1,0 +1,474 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#eef6f1" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#07120f" media="(prefers-color-scheme: dark)">
+  <meta name="description" content="GuideBand is a hands-free AI assistant for blind and low-vision people. It sees hazards, remembers what it saw, and acts for you — only after a spoken yes.">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="landing.css?v=2">
+  <link rel="stylesheet" href="live.css?v=21">
+  <title>GuideBand — The AI that sees, remembers and acts for you</title>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to main content</a>
+
+  <div class="wallpaper" aria-hidden="true">
+    <i class="orb orb-a"></i><i class="orb orb-b"></i><i class="orb orb-c"></i><i class="orb orb-d"></i>
+  </div>
+
+  <header class="nav-wrap">
+    <nav class="nav glass" aria-label="Main">
+      <a class="brand" href="#top" aria-label="GuideBand home">
+        <img src="icon.svg" alt="" width="30" height="30">
+        <span>GuideBand</span>
+      </a>
+      <ul class="nav-links">
+        <li><a href="#features">What it does</a></li>
+        <li><a href="#how">How it works</a></li>
+        <li><a href="#demo">Live demo</a></li>
+        <li><a href="#trust">Trust</a></li>
+        <li><a href="#get">Get the app</a></li>
+      </ul>
+      <a class="btn btn-primary btn-small" href="#demo">Try the demo</a>
+    </nav>
+  </header>
+
+  <main id="main">
+    <!-- Hero -->
+    <section class="hero container" id="top" aria-labelledby="heroTitle">
+      <div class="hero-copy">
+        <p class="pill glass"><span class="dot"></span>Hands-free AI for blind and low-vision people</p>
+        <h1 id="heroTitle">The AI that sees, remembers and <span class="accent">acts for you.</span></h1>
+        <p class="lede">A Vexo bracelet is your voice. A chest-clipped phone is your eyes. No screen to aim, no buttons to find — just talk, and GuideBand does the rest.</p>
+        <div class="cta-row">
+          <a class="btn btn-primary" href="#demo">
+            Try the live demo
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </a>
+          <a class="btn btn-glass glass" href="#how">See how it works</a>
+        </div>
+        <ul class="hero-facts" aria-label="Key facts">
+          <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>No aiming, no tapping</li>
+          <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Hazards detected on-device</li>
+          <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Nothing paid without your yes</li>
+        </ul>
+      </div>
+
+      <div class="hero-demo">
+        <div class="phone glass" role="group" aria-label="Example conversation with GuideBand">
+          <div class="phone-screen">
+            <div class="phone-status"><span class="dot"></span>Ready · listening</div>
+            <div class="chat" aria-live="polite">
+              <p class="bubble bubble-user" id="demoHeard">“What’s in front of me?”</p>
+              <p class="bubble bubble-guide" id="demoReply">Chair ahead, slightly left. The doorway is clear beyond it.</p>
+              <div class="sheet">
+                <p class="sheet-eyebrow" id="demoEyebrow">Detected on device</p>
+                <p class="sheet-title" id="demoTitle">Chair · ahead, left</p>
+                <p class="sheet-detail" id="demoDetail">Processed locally. No video stored.</p>
+                <div class="sheet-actions" id="demoActions" hidden><span>Not now</span><span class="yes">Yes, pay</span></div>
+              </div>
+            </div>
+            <div class="orb-talk" aria-hidden="true">
+              <span class="ring"></span><span class="ring ring-2"></span>
+              <svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0013 0M12 17.5V21"/></svg>
+            </div>
+          </div>
+        </div>
+        <div class="chips" role="group" aria-label="Try an example">
+          <button class="chip glass" type="button" data-scene="see" aria-pressed="true">See</button>
+          <button class="chip glass" type="button" data-scene="remember" aria-pressed="false">Remember</button>
+          <button class="chip glass" type="button" data-scene="act" aria-pressed="false">Act</button>
+          <button class="chip glass" type="button" data-scene="bridge" aria-pressed="false">Bridge</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- What it does -->
+    <section class="section container" id="features" aria-labelledby="featuresTitle">
+      <div class="section-head">
+        <p class="eyebrow">What it does</p>
+        <h2 id="featuresTitle">See. Remember. Act.</h2>
+        <p>Today’s vision apps make you aim a phone and tap buttons — then forget everything the moment you close them. GuideBand works the other way round.</p>
+      </div>
+      <div class="grid">
+        <article class="card glass">
+          <span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/></svg></span>
+          <h3>See</h3>
+          <p>Live hazard warnings spoken as you move: <strong>“Chair ahead, left.”</strong> Detection runs locally, so it stays fast and private.</p>
+        </article>
+        <article class="card glass">
+          <span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 12a8.5 8.5 0 108.5-8.5A8.5 8.5 0 005 8M3.5 4v4h4"/><path d="M12 8v4.2l2.8 1.8"/></svg></span>
+          <h3>Remember</h3>
+          <p>Ask later: <strong>“Where did I leave my keys?”</strong> or <strong>“What did that sign say?”</strong> GuideBand keeps a private memory of what it saw.</p>
+        </article>
+        <article class="card glass">
+          <span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5.5" width="18" height="13" rx="2.5"/><path d="M3 10h18M7 15h3"/></svg></span>
+          <h3>Act</h3>
+          <p>Say <strong>“Buy me a coffee.”</strong> It reads the item and price aloud, then pays only after you say yes.</p>
+        </article>
+        <article class="card glass">
+          <span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0013 0M12 17.5V21"/></svg></span>
+          <h3>Hands-free by design</h3>
+          <p>The bracelet listens and speaks, the phone stays clipped to your chest. Your hands stay free for your cane, your dog, your day.</p>
+        </article>
+        <article class="card glass">
+          <span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h13M13 4l4 4-4 4M20 16H7M11 12l-4 4 4 4"/></svg></span>
+          <h3>Bridge <span class="tag">Coming soon</span></h3>
+          <p>A bridge between deaf and blind people: sign language voiced aloud, and speech shown as large captions.</p>
+        </article>
+        <article class="card glass">
+          <span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="3"/><path d="M9 7V3h6v4M9 17v4h6v-4"/></svg></span>
+          <h3>Made for AI wearables</h3>
+          <p>GuideBand is an accessibility layer that plugs into AI wearables — starting with the Vexo bracelet.</p>
+        </article>
+      </div>
+    </section>
+
+    <!-- How it works -->
+    <section class="section container" id="how" aria-labelledby="howTitle">
+      <div class="section-head">
+        <p class="eyebrow">How it works</p>
+        <h2 id="howTitle">The bracelet is your voice. The phone is your eyes.</h2>
+        <p>Safety-critical detection runs locally and privately. Reasoning and natural voice use the cloud.</p>
+      </div>
+      <ol class="steps">
+        <li class="step glass">
+          <span class="step-num">1</span>
+          <h3>You talk</h3>
+          <p>Speak to the <strong>Vexo bracelet</strong> on your wrist. A <strong>chest-clipped phone</strong> camera watches the way ahead.</p>
+        </li>
+        <li class="step glass">
+          <span class="step-num">2</span>
+          <h3>It understands</h3>
+          <p>Hazards are spotted <strong>on-device</strong> in real time. An AI agent handles questions, memory and requests.</p>
+        </li>
+        <li class="step glass">
+          <span class="step-num">3</span>
+          <h3>It answers — or asks</h3>
+          <p>You hear a clear spoken reply. For anything that matters, like paying, it waits for your <strong>“yes”</strong>.</p>
+        </li>
+      </ol>
+    </section>
+
+    <!-- Live demo -->
+    <section class="section container" id="demo" aria-labelledby="demoSectionTitle">
+      <div class="section-head">
+        <p class="eyebrow">Live demo</p>
+        <h2 id="demoSectionTitle">Try it. This one is real.</h2>
+        <p>Your camera, your voice, the real GuideBand service. Turn the camera on, then ask a question out loud or type it.</p>
+      </div>
+
+      <div class="live glass" id="live">
+        <div class="live-bar">
+          <p class="live-status" role="status"><span class="dot dot-off" id="liveDot"></span><span id="liveStatus">Checking the GuideBand service…</span></p>
+          <div class="band-widget" id="webBandWidget">
+            <span class="dot dot-off" id="webBandDot"></span>
+            <span class="band-label" id="webBandLabel">Vexo band not connected</span>
+            <button class="btn btn-primary btn-small" id="webBandListenBtn" type="button">Connect band</button>
+          </div>
+        </div>
+
+        <div class="live-offline" id="liveOffline" hidden>
+          <h3>The GuideBand service is not running</h3>
+          <p>The demo needs the local service. From the project folder, run:</p>
+          <pre><code>python -m uvicorn backend.app.main:app --port 8000</code></pre>
+          <button class="btn btn-glass glass btn-small" type="button" id="retryBtn">Check again</button>
+        </div>
+
+        <div class="live-grid">
+          <!-- Camera -->
+          <div class="live-view">
+            <div class="stage">
+              <video id="liveVideo" playsinline muted aria-label="Camera preview"></video>
+              <canvas id="liveOverlay" aria-hidden="true"></canvas>
+              <p class="stage-empty" id="stageEmpty">Camera is off</p>
+              <p class="stage-warning" id="liveWarning" aria-live="assertive"></p>
+            </div>
+            <p class="nav-status" id="navStatus" role="status"></p>
+            <div class="live-controls">
+              <div class="row wrap">
+                <button class="btn btn-primary" type="button" id="camBtn">Turn camera on</button>
+                <button class="btn btn-glass glass" type="button" id="flipBtn">Flip camera</button>
+                <div class="zoom" role="group" aria-label="Camera zoom">
+                  <button class="btn btn-glass glass zoom-step" type="button" id="zoomOut" aria-label="Zoom out">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12"/></svg>
+                  </button>
+                  <span class="zoom-label" id="zoomLabel" role="status">1×</span>
+                  <button class="btn btn-glass glass zoom-step" type="button" id="zoomIn" aria-label="Zoom in">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12M12 6v12"/></svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Panels -->
+          <div class="live-side">
+            <div class="tabs" role="tablist" aria-label="Demo mode">
+              <button class="tab" role="tab" type="button" id="tab-assistant" aria-controls="panel-assistant" aria-selected="true">Assistant</button>
+              <button class="tab" role="tab" type="button" id="tab-bridge" aria-controls="panel-bridge" aria-selected="false" tabindex="-1">Bridge</button>
+              <button class="tab" role="tab" type="button" id="tab-family" aria-controls="panel-family" aria-selected="false" tabindex="-1">Family</button>
+              <button class="tab" role="tab" type="button" id="tab-memory" aria-controls="panel-memory" aria-selected="false" tabindex="-1">Memory</button>
+              <button class="tab" role="tab" type="button" id="tab-settings" aria-controls="panel-settings" aria-selected="false" tabindex="-1">Settings</button>
+            </div>
+            <p class="mic-state" id="micState" role="status" data-state="off">Microphone off</p>
+
+            <div class="panel" role="tabpanel" id="panel-assistant" aria-labelledby="tab-assistant">
+              <ol class="log" id="liveLog" aria-live="polite" aria-label="Conversation">
+                <li class="msg msg-guide"><p>Hi, I’m GuideBand. The microphone is on — just ask what’s in front of you, where you are, or to pay for something.</p></li>
+              </ol>
+              <div class="confirm" id="confirmBar" hidden>
+                <p id="confirmText">Confirm?</p>
+                <div class="row">
+                  <button class="btn btn-glass glass btn-small" type="button" data-say="No">No, cancel</button>
+                  <button class="btn btn-primary btn-small" type="button" data-say="Yes">Yes</button>
+                </div>
+              </div>
+              <div class="quick" role="group" aria-label="Example commands">
+                <button class="chip glass" type="button" data-say="What’s in front of me?">What’s in front of me?</button>
+                <button class="chip glass" type="button" data-say="Read the text you can see.">Read the text</button>
+                <button class="chip glass" type="button" data-say="Where am I?">Where am I?</button>
+                <button class="chip glass" type="button" data-say="Remember this.">Remember this</button>
+                <button class="chip glass" type="button" data-say="Where did I leave my keys?">Where are my keys?</button>
+                <button class="chip glass" type="button" data-say="Pay this.">Pay this</button>
+                <button class="chip glass" type="button" data-say="Buy me a coffee.">Buy me a coffee</button>
+                <button class="chip glass" type="button" data-say="Take me to the nearest supermarket.">Nearest supermarket</button>
+                <button class="chip glass" type="button" data-say="Take me home.">Take me home</button>
+                <button class="chip glass" type="button" data-say="Take me back.">Take me back</button>
+                <button class="chip glass" type="button" data-say="Tell Mom where I am.">Tell Mom where I am</button>
+              </div>
+              <form class="ask" id="askForm">
+                <label class="visually-hidden" for="askInput">Type a command</label>
+                <input id="askInput" type="text" placeholder="Just talk, or type here" autocomplete="off" maxlength="300">
+                <button class="btn btn-primary btn-small" type="submit">Send</button>
+              </form>
+              <p class="hint">To try paying by code, show the camera <a id="qrLink" href="#" target="_blank" rel="noopener">this demo payment code</a> on another screen and say “Guide, pay this”.</p>
+            </div>
+
+            <div class="panel" role="tabpanel" id="panel-bridge" aria-labelledby="tab-bridge" hidden>
+              <p class="hint" id="bridgeState" role="status">Bridge runs by itself: point the camera at the person signing, and just talk.</p>
+              <div>
+                <div class="row wrap bridge-head">
+                  <p class="eyebrow">They signed</p>
+                  <div class="sign-mode" role="radiogroup" aria-label="What to read">
+                    <label><input type="radio" name="signMode" value="words" checked><span>Signs</span></label>
+                    <label><input type="radio" name="signMode" value="letters"><span>Fingerspelling</span></label>
+                  </div>
+                  <button class="link-inline" type="button" id="signClear">Clear</button>
+                </div>
+                <p class="bridge-caption bridge-sign" id="signOut" aria-live="polite">—</p>
+                <p class="sign-live"><span id="signLive">No sign in view</span><span class="sign-meter" aria-hidden="true"><i id="signMeter"></i></span></p>
+              </div>
+              <div class="facing" id="facing">
+                <div class="row wrap bridge-head">
+                  <p class="eyebrow">You said</p>
+                  <button class="btn btn-primary btn-small" type="button" id="facingBtn">Show them — big view</button>
+                </div>
+                <p class="bridge-caption" id="bridgeCaption" aria-live="polite">What you say appears here in large text.</p>
+                <div class="spell" id="spellOut" aria-hidden="true"></div>
+              </div>
+              <form class="ask" id="speakForm">
+                <label class="visually-hidden" for="speakInput">Type something to say aloud</label>
+                <input id="speakInput" type="text" placeholder="Or type something to say and sign" autocomplete="off" maxlength="300">
+                <button class="btn btn-primary btn-small" type="submit">Speak</button>
+              </form>
+              <p class="hint">American Sign Language, read on this device. Signs with movement: Yes (a fist nodding), No (index and middle finger snapping onto the thumb), Hello (a flat hand waving), Thank you (a flat hand moving down from the chin), Please (a flat hand circling), Sorry (a fist circling), Help (a thumbs-up fist lifted), Stop (a flat hand pushed forward). SOS, the Signal for Help: show your palm with the thumb folded in, then close your fingers over the thumb. Still handshapes: I love you, OK, Peace, Water, Call me, You. The whole ASL alphabet is in Fingerspelling mode (J and Z need motion and are not read). Your speech is shown as text and as ASL fingerspelling. Alphabet images: Wikimedia Commons, public domain.</p>
+            </div>
+
+            <div class="panel" role="tabpanel" id="panel-family" aria-labelledby="tab-family" hidden>
+              <p class="hint">People GuideBand may message for you. Say “Guide, tell Mom where I am”. Nothing is sent until you say yes.</p>
+              <ul class="memory" id="contactList"><li class="memory-empty">No contacts yet.</li></ul>
+              <form class="contact-form" id="contactForm">
+                <label for="contactName">Name</label>
+                <input id="contactName" type="text" placeholder="Mom" autocomplete="off" maxlength="40" required>
+                <label for="contactPhone">WhatsApp number, with country code</label>
+                <input id="contactPhone" type="text" inputmode="tel" placeholder="+1 415 555 0100" autocomplete="off" maxlength="24" required>
+                <button class="btn btn-primary btn-small" type="submit">Add contact</button>
+              </form>
+              <p class="hint" id="contactHint"></p>
+            </div>
+
+            <div class="panel" role="tabpanel" id="panel-memory" aria-labelledby="tab-memory" hidden>
+              <p class="hint">Text notes only: what you asked, what was seen, and places you went. No photos, video or audio are ever saved.</p>
+              <ul class="memory" id="memoryList"><li class="memory-empty">Nothing remembered yet.</li></ul>
+              <div class="row wrap">
+                <button class="btn btn-glass glass btn-small" type="button" id="memoryRefresh">Refresh</button>
+                <button class="btn btn-glass glass btn-small" type="button" id="memoryClear">Erase memory</button>
+              </div>
+            </div>
+
+            <div class="panel" role="tabpanel" id="panel-settings" aria-labelledby="tab-settings" hidden>
+              <section class="settings-card" aria-labelledby="setBand">
+                <h3 id="setBand">Vexo band</h3>
+                <p class="settings-status"><span class="dot dot-off" id="bandDot"></span><strong id="bandStatus" role="status">Not checked yet</strong></p>
+                <p class="hint" id="bandDetail">Double-tap the band so its light blinks blue, then check the connection.</p>
+                <div class="row wrap">
+                  <button class="btn btn-primary btn-small" type="button" id="bandCheck">Connect the band</button>
+                  <button class="btn btn-glass glass btn-small" type="button" id="bandListen">Go to the assistant</button>
+                </div>
+              </section>
+
+              <section class="settings-card" aria-labelledby="setAccess">
+                <h3 id="setAccess">Access</h3>
+                <ul class="permissions">
+                  <li><span>Microphone</span><em id="permMic">—</em><button class="btn btn-glass glass btn-small" type="button" id="allowMic">Allow</button></li>
+                  <li><span>Camera</span><em id="permCamera">—</em><button class="btn btn-glass glass btn-small" type="button" id="allowCamera">Allow</button></li>
+                  <li><span>Location (GPS)</span><em id="permLocation">—</em><button class="btn btn-glass glass btn-small" type="button" id="allowLocation">Allow</button></li>
+                </ul>
+                <button class="btn btn-primary btn-small" type="button" id="allowAll">Allow everything</button>
+              </section>
+
+              <section class="settings-card" aria-labelledby="setHome">
+                <h3 id="setHome">Home address</h3>
+                <p class="hint" id="homeCurrent">Not set yet. Then you can say “Take me home”.</p>
+                <form class="service-form" id="homeForm">
+                  <label for="homeInput">Address or place name</label>
+                  <div class="row">
+                    <input id="homeInput" type="text" placeholder="355 W San Fernando St, San Jose" autocomplete="off" maxlength="200">
+                    <button class="btn btn-primary btn-small" type="submit">Save</button>
+                  </div>
+                </form>
+              </section>
+
+              <section class="settings-card" aria-labelledby="setService">
+                <h3 id="setService">GuideBand service</h3>
+                <form class="service-form" id="apiForm">
+                  <label for="apiInput">Service address</label>
+                  <div class="row">
+                    <input id="apiInput" type="url" inputmode="url" placeholder="http://localhost:8000" autocomplete="off">
+                    <button class="btn btn-primary btn-small" type="submit">Save</button>
+                  </div>
+                </form>
+              </section>
+
+              <section class="settings-card" aria-labelledby="setOptions">
+                <h3 id="setOptions">Options</h3>
+                <div class="settings-options">
+              <label class="toggle"><input type="checkbox" id="micToggle" checked><span>Microphone always on</span></label>
+              <div class="mic-source">
+                <label for="micSource">Listen through</label>
+                <select id="micSource">
+                  <option value="">This device (browser speech)</option>
+                </select>
+                <button class="link-inline" type="button" id="micRefresh">Find bracelet or other microphones</button>
+              </div>
+              <label class="toggle"><input type="checkbox" id="wakeToggle"><span>Only act when I say “Guide” first (for noisy rooms)</span></label>
+              <label class="toggle"><input type="checkbox" id="hazardToggle" checked><span>Speak hazard warnings</span></label>
+              <label class="toggle"><input type="checkbox" id="voiceToggle" checked><span>Speak replies</span></label>
+              <label class="toggle"><input type="checkbox" id="bargeToggle" checked><span>Let me interrupt the assistant through the band</span></label>
+              <label class="toggle"><input type="checkbox" id="autoDescribe"><span>Tell me when the scene changes</span></label>
+              <label class="toggle"><input type="checkbox" id="locationToggle"><span>Use my location for directions and memory</span></label>
+              <label class="toggle"><input type="checkbox" id="autoRemember"><span>Remember what I see, every 20 seconds</span></label>
+                </div>
+              </section>
+            </div>
+          </div>
+        </div>
+
+        <p class="live-privacy">Camera frames go to the GuideBand service on your own computer. When you ask a question, that single frame is also sent to Google Gemini for the answer. Directions send your location to OpenStreetMap services. Speech is recognised by your browser. Nothing is recorded. Payments are test-mode only.</p>
+      </div>
+    </section>
+
+    <!-- Trust -->
+    <section class="section container" id="trust" aria-labelledby="trustTitle">
+      <div class="trust glass">
+        <div class="trust-copy">
+          <p class="eyebrow">Built for trust</p>
+          <h2 id="trustTitle">Nothing happens behind your back.</h2>
+          <p>An assistant you can’t see has to earn your confidence. GuideBand is designed around three promises.</p>
+        </div>
+        <ul class="promises">
+          <li>
+            <span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V8a4 4 0 018 0v2.5"/></svg></span>
+            <div><h3>Private by default</h3><p>No raw video or audio is stored.</p></div>
+          </li>
+          <li>
+            <span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 9.8"/></svg></span>
+            <div><h3>You confirm</h3><p>Money never moves without a spoken yes.</p></div>
+          </li>
+          <li>
+            <span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7.5V13M12 16.3v.2"/></svg></span>
+            <div><h3>Honest about doubt</h3><p>When it isn’t sure, it says so instead of guessing.</p></div>
+          </li>
+        </ul>
+      </div>
+      <p class="notice"><strong>Please note:</strong> GuideBand is a prototype. It does not replace a white cane, guide dog, orientation training or emergency services.</p>
+    </section>
+
+    <!-- Get the app -->
+    <section class="section container" id="get" aria-labelledby="getTitle">
+      <div class="section-head">
+        <p class="eyebrow">Get the app</p>
+        <h2 id="getTitle">GuideBand, built for your device.</h2>
+        <p id="downloadIntro">We’ll detect this device and put the right build first. You can always choose another platform.</p>
+      </div>
+      <div class="detected glass" id="detectedDownload" role="region" aria-live="polite" aria-label="Recommended download">
+        <div class="detected-icon" id="detectedIcon" aria-hidden="true"></div>
+        <div class="detected-copy">
+          <p class="download-kicker"><span class="dot"></span><span id="detectedLabel">Checking your device…</span></p>
+          <h3 id="detectedTitle">Finding the right GuideBand build</h3>
+          <p id="detectedDetail">This takes less than a second.</p>
+        </div>
+        <a class="btn btn-primary download-main" id="detectedButton" href="app.html">Open web app</a>
+      </div>
+
+      <div class="platform-grid" id="allDownloads" aria-label="All GuideBand downloads">
+        <article class="platform-card glass" data-platform="android">
+          <div class="platform-head"><span class="os-icon os-android" aria-hidden="true"></span><div><h3>Android</h3><p>Phone + Vexo bracelet</p></div></div>
+          <a class="download-choice" href="https://github.com/zaf-07/GuideBand/releases/download/v0.1.0/GuideBand-Android.apk" download>
+            <span><strong>Download APK</strong><small>Android 8.0+ · 12.9 MB</small></span><b aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 4v11M7 10.5l5 5 5-5M5.5 19.5h13"/></svg></b>
+          </a>
+          <a class="alt-download" href="https://github.com/zaf-07/GuideBand/releases/download/v0.1.0/GuideBand-Android-debug.apk" download>Debug APK</a>
+        </article>
+        <article class="platform-card glass" data-platform="macos">
+          <div class="platform-head"><span class="os-icon os-apple" aria-hidden="true"></span><div><h3>macOS</h3><p>Apple silicon + Intel</p></div></div>
+          <a class="download-choice" href="https://github.com/zaf-07/GuideBand/releases/download/v0.1.0/GuideBand-0.1.0-universal.dmg" download>
+            <span><strong>Download universal DMG</strong><small>macOS · 203.8 MB</small></span><b aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 4v11M7 10.5l5 5 5-5M5.5 19.5h13"/></svg></b>
+          </a>
+          <a class="alt-download" href="https://github.com/zaf-07/GuideBand/releases/download/v0.1.0/GuideBand-0.1.0-universal-mac.zip" download>ZIP archive</a>
+        </article>
+        <article class="platform-card glass" data-platform="windows">
+          <div class="platform-head"><span class="os-icon os-windows" aria-hidden="true"></span><div><h3>Windows</h3><p>Windows 10 and later</p></div></div>
+          <a class="download-choice" href="https://github.com/zaf-07/GuideBand/releases/download/v0.1.0/GuideBand.Setup.0.1.0.exe" download>
+            <span><strong>Download installer</strong><small>x64 Setup · 102 MB</small></span><b aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 4v11M7 10.5l5 5 5-5M5.5 19.5h13"/></svg></b>
+          </a>
+          <a class="alt-download" href="https://github.com/zaf-07/GuideBand/releases/download/v0.1.0/GuideBand.0.1.0.exe" download>Portable EXE</a>
+        </article>
+        <article class="platform-card glass" data-platform="linux">
+          <div class="platform-head"><span class="os-icon os-linux" aria-hidden="true"></span><div><h3>Linux</h3><p>Debian, Ubuntu + others</p></div></div>
+          <a class="download-choice" href="https://github.com/zaf-07/GuideBand/releases/download/v0.1.0/guideband_0.1.0_amd64.deb" download>
+            <span><strong>Download DEB</strong><small>x64 · 90.4 MB</small></span><b aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 4v11M7 10.5l5 5 5-5M5.5 19.5h13"/></svg></b>
+          </a>
+          <a class="alt-download" href="https://github.com/zaf-07/GuideBand/releases/download/v0.1.0/GuideBand-0.1.0.AppImage" download>AppImage</a>
+        </article>
+        <article class="platform-card platform-card-web glass" data-platform="web">
+          <div class="platform-head"><span class="os-icon os-web" aria-hidden="true"></span><div><div class="title-with-tag"><h3>Web app</h3><span class="tag">Instant demo</span></div><p>Works in any modern browser · No installation needed</p></div></div>
+          <a class="download-choice web-choice" href="app.html">
+            <span><strong>Open GuideBand</strong><small>Full hands-free audio demo</small></span><b aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></b>
+          </a>
+        </article>
+      </div>
+      <p class="release-note">GuideBand 0.1.0 · Early hackathon prototype. Desktop builds are unsigned, so your operating system may ask you to confirm before opening.</p>
+    </section>
+  </main>
+
+  <footer class="footer container">
+    <a class="brand" href="#top" aria-label="GuideBand home">
+      <img src="icon.svg" alt="" width="26" height="26">
+      <span>GuideBand</span>
+    </a>
+    <p>Built at VexoHacks · Y Combinator, San Francisco · Assistive companion, not a mobility aid</p>
+    <ul>
+      <li><a href="app.html">Demo</a></li>
+      <li><a href="https://github.com/zaf-07/GuideBand" rel="noopener">GitHub</a></li>
+      <li><a href="https://github.com/zaf-07/GuideBand/blob/main/LICENSE" rel="noopener">MIT License</a></li>
+    </ul>
+  </footer>
+
+  <script src="landing.js"></script>
+  <script src="signs.js?v=16"></script>
+  <script src="live.js?v=31"></script>
+</body>
+</html>

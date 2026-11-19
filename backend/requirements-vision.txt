@@ -1,0 +1,4 @@
+# Optional: local hazard detection. Without it the API still runs and
+# /vision/analyze answers through the cloud model only.
+# Install the CUDA build of PyTorch first (see pytorch.org) to use the GPU.
+ultralytics>=8.3,<9

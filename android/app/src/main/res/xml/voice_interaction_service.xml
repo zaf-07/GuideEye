@@ -1,0 +1,1 @@
+<voice-interaction-service xmlns:android="http://schemas.android.com/apk/res/android" android:sessionService="ai.guideband.app.voice.GuideVoiceSessionService" android:recognitionService="ai.guideband.app.voice.GuideRecognitionService" android:supportsAssist="true" android:supportsLaunchVoiceAssistFromKeyguard="true" />

@@ -1,0 +1,16 @@
+.DS_Store
+.env
+vexo-open-kit/
+.venv/
+__pycache__/
+*.pyc
+tmp/
+node_modules/
+release/
+android/.gradle/
+android/app/build/
+android/local.properties
+*.blockmap
+output/
+backend/models/*.pt
+backend/data/
