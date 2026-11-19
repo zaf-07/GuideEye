@@ -1,4 +1,4 @@
-# GuideBand product and research brief
+# GuideEye product and research brief
 
 ## Product decision
 
@@ -28,7 +28,7 @@ Recommended wake phrase: **“Guide, I’m ready.”** It is short, brand-linked
 ## Demo flow
 
 1. “Guide, I’m ready. In 30 minutes help me walk to Safeway.”
-2. GuideBand repeats the plan and asks for confirmation.
+2. GuideEye repeats the plan and asks for confirmation.
 3. At the due time it announces readiness and asks before opening walking directions.
 4. Journey mode speaks Maps route instructions and labels separate camera observations as unverified. It never invents distance.
 5. A trusted contact can follow only after the user enables Guardian for this trip.

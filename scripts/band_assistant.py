@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Keep the Vexo band connected as the always-on microphone of the GuideBand assistant.
+"""Keep the Vexo band connected as the always-on microphone of the GuideEye assistant.
 
     python scripts/band_assistant.py
 
-The GuideBand service starts this by itself, so you normally never run it by hand.
+The GuideEye service starts this by itself, so you normally never run it by hand.
 
 One Bluetooth connection is opened and kept. The band's microphone is streamed to
 Deepgram (the kit prints a line saying so, and the band's light turns solid blue),
@@ -54,7 +54,7 @@ def post(service: str, path: str, **fields) -> bool:
 
 def key_terms(service: str) -> list[str]:
     """Words the speech service should expect: contact names and the assistant's own vocabulary."""
-    terms = ['GuideBand', 'WhatsApp', 'supermarket', 'home address']
+    terms = ['GuideEye', 'WhatsApp', 'supermarket', 'home address']
     try:
         with urllib.request.urlopen(service + '/contacts', timeout=3) as response:
             terms = [contact['name'] for contact in json.load(response)] + terms
@@ -240,7 +240,7 @@ def run(transport: str, minutes: float, service: str, language: str) -> None:
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Keep the Vexo band connected as the GuideBand microphone.')
+    parser = argparse.ArgumentParser(description='Keep the Vexo band connected as the GuideEye microphone.')
     parser.add_argument('--transport', choices=('ble', 'serial', 'sim'), default='ble')
     parser.add_argument('--minutes', type=float, default=480)
     parser.add_argument('--service', default='http://127.0.0.1:8000')

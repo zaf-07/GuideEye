@@ -1,4 +1,4 @@
-// GuideBand landing — small progressive enhancements. The page works without this file.
+// GuideEye landing — small progressive enhancements. The page works without this file.
 
 // The nav only grows a background once the page has scrolled past the headline.
 const navBar = document.querySelector('.nav');
@@ -96,11 +96,11 @@ else if (/Win/i.test(platform)) detected = 'windows';
 else if (/Linux|X11/i.test(platform)) detected = 'linux';
 
 const recommendations = {
-  android: { label: 'Android detected', title: 'GuideBand for Android', detail: 'The full phone assistant with Vexo bracelet support.', button: 'Download APK · 12.9 MB', href: release + 'GuideBand-Android.apk' },
-  macos: { label: 'macOS detected', title: 'GuideBand for your Mac', detail: 'One universal build for Apple silicon and Intel Macs.', button: 'Download universal DMG', href: release + 'GuideBand-0.1.0-universal.dmg' },
-  windows: { label: 'Windows detected', title: 'GuideBand for Windows', detail: 'The guided x64 installer for Windows 10 and later.', button: 'Download Windows installer', href: release + 'GuideBand.Setup.0.1.0.exe' },
-  linux: { label: 'Linux detected', title: 'GuideBand for Linux', detail: 'DEB for Debian and Ubuntu. AppImage is available below.', button: 'Download DEB · x64', href: release + 'guideband_0.1.0_amd64.deb' },
-  web: { label: /iPhone|iPad|iPod/i.test(ua) || touchMac ? 'iPhone or iPad detected' : 'Browser detected', title: 'Open GuideBand on the web', detail: 'No native build is needed. Add it to your home screen for quick access.', button: 'Open web app', href: 'app.html' }
+  android: { label: 'Android detected', title: 'GuideEye for Android', detail: 'The full phone assistant with Vexo bracelet support.', button: 'Download APK · 12.9 MB', href: release + 'GuideBand-Android.apk' },
+  macos: { label: 'macOS detected', title: 'GuideEye for your Mac', detail: 'One universal build for Apple silicon and Intel Macs.', button: 'Download universal DMG', href: release + 'GuideBand-0.1.0-universal.dmg' },
+  windows: { label: 'Windows detected', title: 'GuideEye for Windows', detail: 'The guided x64 installer for Windows 10 and later.', button: 'Download Windows installer', href: release + 'GuideBand.Setup.0.1.0.exe' },
+  linux: { label: 'Linux detected', title: 'GuideEye for Linux', detail: 'DEB for Debian and Ubuntu. AppImage is available below.', button: 'Download DEB · x64', href: release + 'guideband_0.1.0_amd64.deb' },
+  web: { label: /iPhone|iPad|iPod/i.test(ua) || touchMac ? 'iPhone or iPad detected' : 'Browser detected', title: 'Open GuideEye on the web', detail: 'No native build is needed. Add it to your home screen for quick access.', button: 'Open web app', href: 'app.html' }
 };
 // The download block only exists on the landing page; app.html shares this script.
 const rec = recommendations[detected];

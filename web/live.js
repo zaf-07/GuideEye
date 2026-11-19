@@ -1,4 +1,4 @@
-// GuideBand live demo: camera + voice in the browser, talking to the GuideBand service.
+// GuideEye live demo: camera + voice in the browser, talking to the GuideEye service.
 (() => {
   const el = id => document.getElementById(id);
   if (!el('live')) return;
@@ -83,7 +83,7 @@
       // once, then report honestly if it really is not running.
       if (!retried && await resolveApi()) return checkService(true);
       online = false;
-      el('liveStatus').textContent = 'Not connected to the GuideBand service';
+      el('liveStatus').textContent = 'Not connected to the GuideEye service';
       el('liveDot').className = 'dot dot-bad';
       // Say what was actually tried. "Not running" is only one of the reasons
       // this fails: the usual one is the page being opened from somewhere the
@@ -97,7 +97,7 @@
       if (el('offlineTitle')) {
         el('offlineTitle').textContent = fromFile
           ? 'This page cannot reach the service'
-          : 'The GuideBand service is not running';
+          : 'The GuideEye service is not running';
       }
       if (el('offlineHint')) el('offlineHint').hidden = !fromFile && location.port === '8000';
     }
@@ -411,7 +411,7 @@
   }
   const plain = text => text.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
   const recentlySpoken = [];
-  /** True when the microphone just heard GuideBand's own voice coming out of the speakers. */
+  /** True when the microphone just heard GuideEye's own voice coming out of the speakers. */
   function isEcho(heard, source) {
     // Only speech that arrives while the assistant is talking, or just after, can be its own voice.
     // The band is muted while a reply plays, so for the band the window is short. Without this limit,
@@ -682,7 +682,7 @@
     text = text.trim();
     if (!text) return;
     if (busy) { queued = text; return; }
-    if (!online) { await checkService(); if (!online) return addMessage('error', 'I can’t reach the GuideBand service. Start it, then try again.'); }
+    if (!online) { await checkService(); if (!online) return addMessage('error', 'I can’t reach the GuideEye service. Start it, then try again.'); }
     busy = true;
     addMessage('user', text);
     const pendingItem = addMessage('guide', 'Thinking');
@@ -1164,7 +1164,7 @@
   }
   el('memoryRefresh').onclick = loadMemory;
   el('memoryClear').onclick = async () => {
-    if (!confirm('Erase everything GuideBand remembers? This cannot be undone.')) return;
+    if (!confirm('Erase everything GuideEye remembers? This cannot be undone.')) return;
     try { await call('/memory', { method: 'DELETE' }); loadMemory(); } catch (error) { addMessage('error', error.message); }
   };
   setInterval(async () => {

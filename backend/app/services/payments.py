@@ -115,7 +115,7 @@ async def charge(order: dict) -> dict:
                 'confirm': 'true',
                 'automatic_payment_methods[enabled]': 'true',
                 'automatic_payment_methods[allow_redirects]': 'never',
-                'description': f'GuideBand demo: {order["item"]}',
+                'description': f'GuideEye demo: {order["item"]}',
             },
         )
     if response.status_code >= 400:

@@ -1,4 +1,4 @@
-"""The GuideBand assistant: one spoken sentence in, one spoken reply out.
+"""The GuideEye assistant: one spoken sentence in, one spoken reply out.
 
 `route` decides what the user wants with plain rules, so the safety-relevant
 decisions (is this a payment? was that a yes?) never depend on a language model.
@@ -354,7 +354,7 @@ class Assistant:
         elif intent == 'help':
             reply['say'] = HELP_TEXT
         elif intent == 'greeting':
-            reply['say'] = 'Hello! I am GuideBand. I can describe what is in front of you, navigate, read text, or remember your items.'
+            reply['say'] = 'Hello! I am GuideEye. I can describe what is in front of you, navigate, read text, or remember your items.'
         elif image is None:
             reply['say'] = 'I need the camera for that. Please turn the camera on.'
         else:
@@ -405,7 +405,7 @@ class Assistant:
                 return
             place = await self.place_name(*location)
             body = (f'I am near {place}. ' if place else 'Here is where I am. ') + \
-                   f'Map: https://maps.google.com/?q={location[0]:.5f},{location[1]:.5f} (sent with GuideBand)'
+                   f'Map: https://maps.google.com/?q={location[0]:.5f},{location[1]:.5f} (sent with GuideEye)'
         self._messages[session] = {
             'name': contact['name'], 'phone': contact['phone'], 'text': body, 'expires': time.time() + MESSAGE_TTL_SECONDS,
             'url': f'https://wa.me/{contact["phone"]}?text={quote(body)}',

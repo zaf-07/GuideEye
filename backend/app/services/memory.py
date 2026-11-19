@@ -1,4 +1,4 @@
-"""GuideBand's private memory: what was seen, where and when.
+"""GuideEye's private memory: what was seen, where and when.
 
 Only short text is stored — object labels, positions and brief notes. Images
 and audio are never written. Everything lives in one local SQLite file that the
@@ -25,7 +25,7 @@ log = logging.getLogger(__name__)
 def _mirror_requests() -> bool:
     """Whether the wearer's own spoken requests are synced, not just what was seen.
 
-    On by default. What someone says to GuideBand is most of what it knows —
+    On by default. What someone says to GuideEye is most of what it knows —
     with no vision key there is nothing else — so holding requests back left
     the long-term memory permanently empty. Set SUPERMEMORY_MIRROR_REQUESTS=false
     to keep them on the device instead.
@@ -33,7 +33,7 @@ def _mirror_requests() -> bool:
     return os.getenv('SUPERMEMORY_MIRROR_REQUESTS', 'true').strip().lower() not in {'0', 'false', 'no', 'off'}
 
 RECALL_PROMPT = (
-    'You are GuideBand, the memory of a blind or low-vision person, speaking aloud. '
+    'You are GuideEye, the memory of a blind or low-vision person, speaking aloud. '
     'Answer the question from the memory notes provided, in one or two short sentences. '
     'Use whatever the notes say about the thing: what it was near, which side it was on, the street, and how long ago. '
     'An approximate answer from the notes is better than none. '

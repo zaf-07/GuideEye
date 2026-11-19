@@ -37,7 +37,7 @@ async def lifespan(_: FastAPI):
     band_stop()
 
 
-app = FastAPI(title='GuideBand Local API', version='0.3.0', lifespan=lifespan)
+app = FastAPI(title='GuideEye Local API', version='0.3.0', lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[o.strip() for o in os.getenv('CORS_ORIGINS', DEFAULT_ORIGINS).split(',')],

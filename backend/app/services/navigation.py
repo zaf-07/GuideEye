@@ -13,7 +13,7 @@ import os
 import re
 import time
 
-USER_AGENT = {'User-Agent': 'GuideBand-hackathon-demo/0.3'}
+USER_AGENT = {'User-Agent': 'GuideEye-hackathon-demo/0.3'}
 SEARCH_URL = 'https://nominatim.openstreetmap.org/search'
 REVERSE_URL = 'https://nominatim.openstreetmap.org/reverse'
 ROUTE_URL = 'https://routing.openstreetmap.de/routed-foot/route/v1/foot/{lon1},{lat1};{lon2},{lat2}'

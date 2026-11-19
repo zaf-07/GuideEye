@@ -1,4 +1,4 @@
-# Run the GuideBand live demo on your laptop
+# Run the GuideEye live demo on your laptop
 
 About five minutes. Needs **Python 3.10 or newer**, Chrome, a webcam and a microphone.
 
@@ -76,7 +76,7 @@ The shooting script for the demo video is in [DEMO_VIDEO_GUIDE.md](DEMO_VIDEO_GU
 
 | Problem | Fix |
 | --- | --- |
-| `Not connected to the GuideBand service` | The service is not running, or runs on another port. Start it as in step 4 |
+| `Not connected to the GuideEye service` | The service is not running, or runs on another port. Start it as in step 4 |
 | Errors about `float \| None` or `str \| None` at start-up | Python is older than 3.10. Use 3.10 or newer |
 | `detector unavailable` in the status line | The vision requirements are not installed; everything else still works |
 | No reaction to your voice | Look at the line above the chat. Turn on "Microphone always on"; turn off "Only act when I say Guide first" |

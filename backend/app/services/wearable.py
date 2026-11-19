@@ -118,7 +118,7 @@ def status() -> dict:
         Capability('live_audio', 'documented', 'Opus 16 kHz mono, 20 ms frames over the Vexo Open contract'),
         Capability('deepgram', 'ready', 'Official helper reads DEEPGRAM_API_KEY; mip_opt_out=true'),
         Capability('band_haptics', 'unavailable', 'Vexo Open contract explicitly says this hardware has no vibration'),
-        Capability('phone_haptics', 'implemented', 'Android vibrates after every accepted GuideBand command'),
+        Capability('phone_haptics', 'implemented', 'Android vibrates after every accepted GuideEye command'),
     ]
     return {
         'connected': live_conn,

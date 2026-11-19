@@ -2,7 +2,7 @@ import unittest
 from backend.app.planner import plan
 from backend.app.services.wearable import status
 
-class GuideBandTests(unittest.TestCase):
+class GuideEyeTests(unittest.TestCase):
     def test_journey_requires_confirmation(self):
         result=plan('In 30 minutes help me walk to Safeway');self.assertEqual(result['intent'],'schedule_journey');self.assertTrue(result['requires_confirmation']);self.assertEqual(result['delay_minutes'],30)
     def test_external_actions_require_confirmation(self):
