@@ -176,6 +176,23 @@ class SignVocabularyTests(unittest.TestCase):
         self.assertEqual(bridge.parse_reading('{"text": "banana", "confidence": 0.95}')['text'], '')
         self.assertEqual(bridge.parse_reading('{"text": "hello", "confidence": 0.4}')['text'], '')
 
+    def test_focused_asl_vocabulary_accepts_requested_signs(self):
+        for word in ('I / me', 'want', 'water', 'you', 'like', 'eat', 'apple', 'today', 'my', 'friend',
+                     'go', 'school', 'tomorrow', 'we', 'play', 'basketball', 'please', 'help', 'find', 'book'):
+            self.assertEqual(bridge.parse_reading(f'{{"text": "{word}", "confidence": 0.9}}')['text'], word)
+
+    def test_focused_asl_sequences_translate_in_asl_order(self):
+        examples = {
+            ('I / me', 'want', 'water'): 'I want water.',
+            ('you', 'like', 'eat', 'apple'): 'Do you like eating apples?',
+            ('today', 'my', 'friend', 'go', 'school'): 'My friend is going to school today.',
+            ('tomorrow', 'we', 'play', 'basketball'): 'We’ll play basketball tomorrow.',
+            ('please', 'help', 'I / me', 'find', 'book'): 'Please help me find the book.',
+        }
+        for signs, expected in examples.items():
+            self.assertEqual(bridge.translate_sequence(list(signs)), expected)
+        self.assertEqual(bridge.translate_sequence(['water', 'want']), '')
+
 
 if __name__ == '__main__':
     unittest.main()

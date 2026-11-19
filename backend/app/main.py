@@ -53,6 +53,9 @@ assistant = Assistant(memory, orders, navigator=navigator)
 class Command(BaseModel):
     text: str = Field(min_length=1, max_length=500)
 
+class SignSequence(BaseModel):
+    signs: list[str] = Field(min_length=1, max_length=12)
+
 class TaskCreate(BaseModel):
     title: str = Field(min_length=1, max_length=120)
     delay_minutes: int = Field(ge=0, le=1440)
@@ -278,6 +281,12 @@ async def bridge_sign(images: list[UploadFile] = File(...)):
         raise HTTPException(503, 'Sign reading needs the cloud vision model')
     frames = [(await read_image(image), image.content_type) for image in images[:bridge.MAX_FRAMES]]
     return await bridge.read_sign(frames)
+
+@app.post('/bridge/translate')
+def bridge_translate(sequence: SignSequence):
+    """Translate one supported sequence of recognized ASL concepts."""
+    translation = bridge.translate_sequence(sequence.signs)
+    return {'signs': sequence.signs, 'translation': translation, 'supported': bool(translation)}
 
 # ---------- Band microphone ----------
 # scripts/band_assistant.py posts each sentence heard through the Vexo band here; the open
