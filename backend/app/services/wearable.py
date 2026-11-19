@@ -23,9 +23,9 @@ class WearableError(RuntimeError):
 _live_state: dict = {
     'connected': False,
     'transport': 'ble',
-    'battery': {'percent': 95, 'charging': False, 'state': 'battery'},
-    'firmware': '1.1.0',
-    'protocol': '1.1',
+    'battery': None,
+    'firmware': None,
+    'protocol': None,
     'last_seen': time.time(),
 }
 
@@ -72,8 +72,23 @@ def serial_ports() -> list[str]:
     return sorted(glob('/dev/cu.usbmodem*') + glob('/dev/tty.usbmodem*') + glob('/dev/ttyACM*'))
 
 
+_bluetooth_cache: dict = {'at': 0.0, 'devices': []}
+BLUETOOTH_CACHE_SECONDS = 10.0
+
+
 def bluetooth_devices() -> list[dict[str, str | None]]:
-    """Return connected Vexo BLE devices without opening a BLE session."""
+    """Return connected Vexo BLE devices without opening a BLE session.
+
+    The system query takes a second or more and the pages poll every few seconds, so the answer is reused briefly.
+    """
+    if time.monotonic() - _bluetooth_cache['at'] < BLUETOOTH_CACHE_SECONDS and _bluetooth_cache['at']:
+        return list(_bluetooth_cache['devices'])
+    devices = _query_bluetooth_devices()
+    _bluetooth_cache.update(at=time.monotonic(), devices=devices)
+    return list(devices)
+
+
+def _query_bluetooth_devices() -> list[dict[str, str | None]]:
     try:
         completed = subprocess.run(
             ['system_profiler', 'SPBluetoothDataType', '-json', '-detailLevel', 'full'],
@@ -113,8 +128,8 @@ def status() -> dict:
         'ports': ports,
         'bluetooth_devices': bluetooth,
         'transport': _live_state.get('transport', 'ble' if not ports else 'serial'),
-        'battery': _live_state.get('battery', {'percent': 95, 'charging': False, 'state': 'battery'}),
-        'firmware': _live_state.get('firmware', '1.1.0'),
+        'battery': _live_state.get('battery'),
+        'firmware': _live_state.get('firmware'),
         'capabilities': [asdict(item) for item in capabilities],
     }
 
@@ -138,8 +153,8 @@ async def refresh_band_state(timeout: float = 25.0) -> dict:  # a Windows BLE sc
                 'connected': bool(data.get('connected')),
                 'transport': data.get('transport', 'ble'),
                 'battery': data.get('battery', _live_state['battery']),
-                'firmware': data.get('firmware', '1.1.0'),
-                'protocol': data.get('protocol', '1.1'),
+                'firmware': data.get('firmware', _live_state['firmware']),
+                'protocol': data.get('protocol', _live_state['protocol']),
                 'last_seen': time.time(),
             })
     except Exception:
@@ -173,6 +188,8 @@ async def listen_band(seconds: float = 7.0, language: str = 'multi') -> str:
     stderr_text = stderr.decode(errors='replace') if stderr else ''
     if proc.returncode != 0:
         detail = stderr_text.strip() or out_text.strip()
+        if 'ModuleNotFoundError' in detail or 'Missing vexo-open-kit' in detail:
+            raise WearableError('The Vexo kit is not installed. Run scripts/setup_vexo_open_kit.sh first.')
         raise WearableError(detail.splitlines()[-1] if detail else 'The band connection failed. Double-tap it and try again.')
 
     transcript = ''

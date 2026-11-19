@@ -5,11 +5,12 @@ import os
 import subprocess
 import sys
 import time
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile, WebSocket
+from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -28,7 +29,15 @@ MAX_IMAGE_BYTES = int(os.getenv('MAX_IMAGE_BYTES', str(4 * 1024 * 1024)))
 IMAGE_TYPES = {'image/jpeg', 'image/png', 'image/webp'}
 DEFAULT_ORIGINS = 'http://localhost:4173,http://127.0.0.1:4173,http://localhost:8000,http://127.0.0.1:8000,https://zaf-07.github.io'
 
-app = FastAPI(title='GuideBand Local API', version='0.3.0')
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    if os.getenv('BAND_AUTOCONNECT', 'true').lower() not in {'0', 'false', 'no'}:
+        band_start()
+    yield
+    band_stop()
+
+
+app = FastAPI(title='GuideBand Local API', version='0.3.0', lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[o.strip() for o in os.getenv('CORS_ORIGINS', DEFAULT_ORIGINS).split(',')],
@@ -222,7 +231,11 @@ def pay_qr(item: str = 'Coffee', amount: float = 4.5):
     """A payment QR code for demos: show it to the camera and say "pay this"."""
     if not 0 < amount <= 10000 or len(item) > 60:
         raise HTTPException(422, 'Give an item name and a positive amount')
-    return Response(checkout.make_qr_png(checkout.payment_code(item, amount)), media_type='image/png')
+    try:
+        png = checkout.make_qr_png(checkout.payment_code(item, amount))
+    except ImportError as error:
+        raise HTTPException(503, 'QR codes need OpenCV. Install backend/requirements-vision.txt.') from error
+    return Response(png, media_type='image/png')
 
 # ---------- Speech ----------
 
@@ -320,17 +333,6 @@ def band_view() -> dict:
     return view
 
 
-@app.on_event('startup')
-def band_autostart() -> None:
-    if os.getenv('BAND_AUTOCONNECT', 'true').lower() not in {'0', 'false', 'no'}:
-        band_start()
-
-
-@app.on_event('shutdown')
-def band_shutdown() -> None:
-    band_stop()
-
-
 @app.post('/band/start')
 def band_start_endpoint():
     if not band_start():
@@ -415,9 +417,14 @@ def list_tasks(): return list(tasks.values())
 
 @app.websocket('/events')
 async def events(ws: WebSocket):
-    await ws.accept();await ws.send_json({'event':'connected','timestamp':now()})
-    while True:
-        message=await ws.receive_text();await ws.send_json({'event':'ack','message':message,'timestamp':now()})
+    await ws.accept()
+    await ws.send_json({'event': 'connected', 'timestamp': now()})
+    try:
+        while True:
+            message = await ws.receive_text()
+            await ws.send_json({'event': 'ack', 'message': message, 'timestamp': now()})
+    except WebSocketDisconnect:
+        pass
 
 # ---------- Wearable / Vexo Band ----------
 
@@ -466,6 +473,7 @@ async def post_wearable_listen(request: Request):
         except Exception:
             pass
 
+    seconds = seconds if 1.0 <= seconds <= 30.0 else 7.0
     if band_running():
         return {'ok': False, 'text': '', 'action': None,
                 'say': 'The band is already listening all the time. Just speak.' if band_connected()

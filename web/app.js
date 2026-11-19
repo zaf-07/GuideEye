@@ -1,7 +1,8 @@
 // GuideBand Modern Desktop Application Controller
 (() => {
   const $ = s => document.querySelector(s);
-  const API = 'http://localhost:8000';
+  const stored = (() => { try { return localStorage.getItem('guideband_api'); } catch { return null; } })();
+  const API = (stored ?? (location.port === '8000' ? '' : 'http://localhost:8000')).replace(/\/$/, '');
 
   // --- Clock ---
   function updateClock() {
@@ -21,7 +22,7 @@
     state.textContent = connected ? 'Connected' : 'Not connected';
     const transport = (data.transport || 'ble').toUpperCase();
     details.textContent = connected
-      ? `${data.band_name || 'Vexo-HACK-20'} · ${transport} · battery ${data.battery?.percent ?? 'unknown'}%`
+      ? `${data.band_name || 'Vexo-HACK-20'} · ${transport} · battery ${data.battery?.percent != null ? data.battery.percent + '%' : 'unknown'}`
       : (data.capabilities?.find(item => item.name === 'bluetooth_presence')?.evidence || 'No connected Vexo BLE device detected');
   }
   updateClock();
@@ -60,7 +61,7 @@
         const data = await res.json();
         bandConnected = Boolean(data.connected);
         const name = data.band_name || 'Vexo-HACK-20';
-        const batt = data.battery?.percent != null ? `${data.battery.percent}%` : '95%';
+        const batt = data.battery?.percent != null ? `${data.battery.percent}%` : 'battery unknown';
         const transport = (data.transport || 'ble').toUpperCase();
 
         const dot = $('#bandDot');

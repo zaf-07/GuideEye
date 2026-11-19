@@ -39,7 +39,7 @@
         const bPct = wb.battery?.percent != null ? ` · ${wb.battery.percent}%` : '';
         const trans = (wb.transport || 'ble').toUpperCase();
         el('liveStatus').textContent += ` · Vexo band (${wb.band_name || 'Vexo-HACK-20'}${bPct} via ${trans})`;
-        if (el('webBandLabel')) el('webBandLabel').textContent = `${wb.band_name || 'Vexo-HACK-20'} · ${wb.battery?.percent || 95}% (${trans})`;
+        if (el('webBandLabel')) el('webBandLabel').textContent = `${wb.band_name || 'Vexo-HACK-20'}${bPct} (${trans})`;
         if (el('webBandDot')) el('webBandDot').className = 'dot';
         if (el('webBandWidget')) el('webBandWidget').style.display = 'flex';
       } else {

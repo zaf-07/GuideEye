@@ -80,6 +80,7 @@ def identify(transport: str, seconds: int) -> None:
 
 
 def listen(transport: str, seconds: float, language: str) -> None:
+    _kit_error()
     import speech
 
     with _connect(transport) as band:
