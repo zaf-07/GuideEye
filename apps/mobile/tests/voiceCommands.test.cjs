@@ -28,7 +28,7 @@ test('a follow-up after the wake word needs no second wake word', () => {
 
 test('screen commands stay on the phone', () => {
   assert.strictEqual(voice.localCommand('open settings').href, '/main/settings');
-  assert.strictEqual(voice.localCommand('what is in front of me').href, '/camera?mode=scene&pocket=true');
+  assert.strictEqual(voice.localCommand('open camera').href, '/camera?mode=scene&pocket=true');
   assert.strictEqual(voice.localCommand('go to the home screen').href, '/main');
   assert.strictEqual(voice.localCommand('go back').type, 'back');
   assert.strictEqual(voice.localCommand('stop talking').type, 'quiet');
@@ -40,6 +40,7 @@ test('assistant requests are not swallowed by screen commands', () => {
   for (const text of [
     'take me home', 'take me back', 'go back to the start', 'open whatsapp', 'repeat the directions',
     'stop navigation', 'text Tom I am on my way', 'what is around me', 'where am I', 'call Tim',
+    'what is in front of me', 'read this', 'remember this',
   ]) {
     assert.strictEqual(voice.localCommand(text), null, text);
   }
@@ -69,4 +70,30 @@ test('numbers and spoken delays', () => {
   assert.strictEqual(voice.spokenDelay(900), '15 minutes');
   assert.strictEqual(voice.spokenDelay(60), '1 minute');
   assert.strictEqual(voice.spokenDelay(45), '45 seconds');
+});
+
+const frame = loadTs('src/voice/frame.ts');
+
+test('requests about what the camera sees ask for a frame', () => {
+  for (const text of ["what's in front of me", 'Read the text', 'remember this', 'pay this', 'pay', 'what is this', 'explain this letter', 'what does this say']) {
+    assert.strictEqual(frame.needsCamera(text), true, text);
+  }
+  for (const text of ['take me home', 'text Tom I am on my way', 'where am I', 'buy me a coffee', 'set a timer for ten minutes', 'where are my keys', 'call Tim']) {
+    assert.strictEqual(frame.needsCamera(text), false, text);
+  }
+});
+
+test('the frame source hands out a fresh frame and falls back to the last one', async () => {
+  assert.strictEqual(await frame.captureFrame(), null);
+  assert.strictEqual(await frame.waitForFrameSource(10), false);
+  const waiting = frame.waitForFrameSource(1000);
+  frame.setFrameSource(async () => 'file://fresh.jpg');
+  assert.strictEqual(await waiting, true);
+  assert.strictEqual(await frame.captureFrame(), 'file://fresh.jpg');
+  frame.setFrameSource(async () => { throw new Error('camera busy'); });
+  frame.noteFrame('file://last.jpg');
+  assert.strictEqual(await frame.captureFrame(), 'file://last.jpg');
+  frame.setFrameSource(null);
+  assert.strictEqual(frame.hasFrameSource(), false);
+  assert.strictEqual(await frame.captureFrame(), null);
 });

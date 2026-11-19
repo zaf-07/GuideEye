@@ -1,3 +1,4 @@
+import { noteFrame } from './voice/frame';
 import { NoServerError, apiUrl, isAllowedEndpoint } from './api';
 import type { CameraView } from 'expo-camera';
 import { RefObject, useCallback, useEffect, useRef, useState } from 'react';
@@ -640,6 +641,7 @@ export function useVisionLoop(camera: RefObject<CameraView | null>, mode: Assist
         shutterSound: false,
       });
       if (!picture?.uri) throw new Error('Camera did not return an image');
+      noteFrame(picture.uri);
       const capturedAt = Date.now();
       const captureEndedAt = performanceNow();
       captureTimes.current.push(captureEndedAt);

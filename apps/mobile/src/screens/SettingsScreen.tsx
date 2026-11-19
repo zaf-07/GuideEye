@@ -5,6 +5,8 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { Button, Chip, Display, GlassCard, RoundButton, Screen, Text } from '../components';
 import { apiJson, apiUrl, devHostApiUrl, loadApiUrl, probeApi, setApiUrl } from '../api';
+import { listPlaces, removePlace, savePlace } from '../assistant';
+import { currentCoordinates } from '../useAssistant';
 import { onSyncHealth, remoteStatus, syncHealth, type SyncHealth } from '../memory';
 import { useProfile } from '../state/ProfileContext';
 import { hasHearingTrack, hasVisionTrack, IMPAIRMENT_LABEL } from '../state/profile';
@@ -180,6 +182,91 @@ function ServerCard() {
   );
 }
 
+function HomeAddressCard() {
+  const [home, setHome] = useState('');
+  const [address, setAddress] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState('');
+
+  useEffect(() => {
+    listPlaces()
+      .then((places) => setHome(places.find((place) => place.name === 'home')?.label ?? ''))
+      .catch(() => {});
+  }, []);
+
+  const save = async () => {
+    const value = address.trim();
+    if (!value) return;
+    setBusy(true);
+    setNote('Looking the address up…');
+    try {
+      const saved = await savePlace('home', value, await currentCoordinates());
+      setHome(saved.label);
+      setAddress('');
+      setNote('Saved. Say “Guide, take me home” for directions.');
+    } catch (failure) {
+      setNote(failure instanceof Error ? failure.message : 'The address could not be saved.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const clear = async () => {
+    setBusy(true);
+    try {
+      await removePlace('home');
+      setHome('');
+      setNote('Home address removed.');
+    } catch (failure) {
+      setNote(failure instanceof Error ? failure.message : 'The address could not be removed.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <GlassCard>
+      <Text variant="section">Home address</Text>
+      <Text variant="caption" muted style={{ marginTop: 4 }}>
+        {home ? `Home: ${home}` : 'Not set yet. Then you can say “Take me home”.'}
+      </Text>
+      <TextInput
+        value={address}
+        onChangeText={setAddress}
+        onSubmitEditing={() => void save()}
+        placeholder="Address or place name"
+        placeholderTextColor={colors.textFaint}
+        accessibilityLabel="Home address"
+        autoCapitalize="words"
+        returnKeyType="done"
+        maxLength={200}
+        style={homeStyles.input}
+      />
+      <Button label="Save home address" busy={busy} onPress={() => void save()} />
+      {home ? (
+        <Button label="Remove home address" tone="glass" disabled={busy} onPress={() => void clear()} style={{ marginTop: spacing.sm }} />
+      ) : null}
+      {note ? (
+        <Text variant="caption" muted style={{ marginTop: spacing.sm }} accessibilityLiveRegion="polite">
+          {note}
+        </Text>
+      ) : null}
+    </GlassCard>
+  );
+}
+
+const homeStyles = StyleSheet.create({
+  input: {
+    minHeight: 52,
+    color: colors.text,
+    fontSize: 18,
+    borderRadius: 14,
+    backgroundColor: 'rgba(0,0,0,0.22)',
+    paddingHorizontal: spacing.md,
+    marginVertical: spacing.sm,
+  },
+});
+
 export function SettingsScreen() {
   const { profile, patch, restartOnboarding } = useProfile();
   const vision = hasVisionTrack(profile);
@@ -281,6 +368,8 @@ export function SettingsScreen() {
           onChange={(v) => patch({ captions: v })}
         />
       </GlassCard>
+
+      {hasVisionTrack(profile) ? <HomeAddressCard /> : null}
 
       {hasVisionTrack(profile) ? (
         <GlassCard>

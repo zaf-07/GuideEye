@@ -18,7 +18,7 @@ const CONFIRM = /^\W*(yes|yeah|yep|yup|sure|confirm|go ahead|do it|send it|send|
 export const HELP_TEXT =
   'Say Guide, then what you need. For example: take me to the nearest pharmacy. Take me home. ' +
   'Text Tom I am on my way. Call Tim. Where am I. Which way. Set a timer for ten minutes. ' +
-  'In fifteen minutes take me home. What is in front of me. Open settings. Go back. Stop talking.';
+  'In fifteen minutes take me home. What is in front of me. Read this. Remember this. Open settings. Go back. Stop talking.';
 
 export function extractCommand(
   transcript: string,
@@ -53,7 +53,7 @@ const OPEN_SCREEN = new RegExp(
   `^(?:please )?(?:open|show|go to|launch|start)\\s+(?:the\\s+|my\\s+)?(${Object.keys(SCREENS).join('|')})\\b`,
   'i',
 );
-const LOOK = /\bwhat(?:'s| is) (?:in front of me|ahead of me|ahead)\b|\bwhat (?:do|can) you see\b|\bdescribe (?:the |my |this )?(?:scene|surroundings|room|view)\b|\blook around\b|\bstart (?:the )?pocket\b/i;
+const POCKET = /\bstart (?:the )?pocket\b|\bpocket (?:mode|assistant)\b/i;
 const QUIET = /^(?:please )?(?:stop talking|be quiet|quiet|silence|shut up|hush)\b/i;
 const REPEAT = /^(?:please )?(?:repeat(?: that| it)?|say (?:that|it) again|what did you say)[\s.!?]*$/i;
 const BACK = /^(?:please )?(?:go back|back|close(?: this| it)?)[\s.!?]*$/i;
@@ -71,7 +71,7 @@ export function localCommand(text: string): LocalCommand | null {
   if (HOME_SCREEN.test(value)) return { type: 'route', href: '/main', say: 'Home screen.' };
   const screen = OPEN_SCREEN.exec(value);
   if (screen) return { type: 'route', ...SCREENS[screen[1].toLowerCase()] };
-  if (LOOK.test(value)) return { type: 'route', ...SCREENS.camera };
+  if (POCKET.test(value)) return { type: 'route', ...SCREENS.camera };
   return null;
 }
 

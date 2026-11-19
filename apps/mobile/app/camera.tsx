@@ -20,6 +20,9 @@ import { useSceneMemory, rememberHazard } from '../src/memory/capture';
 import { useProfile } from '../src/state/ProfileContext';
 import { hasLocalDetector } from '../src/detector';
 import { AssistMode, getApiUrl, hasVisionBackend, interpretSignSequence, useVisionLoop } from '../src/vision';
+import { observeForMemory } from '../src/assistant';
+import { currentCoordinates } from '../src/useAssistant';
+import { captureFrame, setFrameSource } from '../src/voice/frame';
 import type { VisionObject } from '../src/vision';
 
 const emptySignContext: SignContextState = { frameCount: 0, maxFrames: 180, handCount: 0, ready: false };
@@ -367,6 +370,30 @@ export default function CameraScreen() {
   }, []);
 
   const { profile } = useProfile();
+
+  // The assistant borrows this camera for "read this", "remember this", "pay this" and "what is in front of me".
+  useEffect(() => {
+    if (mode !== 'scene' || !cameraReady) return undefined;
+    setFrameSource(async () => {
+      const picture = await cameraRef.current?.takePictureAsync({ quality: 0.7, shutterSound: false });
+      return picture?.uri ?? null;
+    });
+    return () => setFrameSource(null);
+  }, [mode, cameraReady]);
+
+  // Every 20 seconds a frame becomes a text note on the server, so "where are my keys" has something to recall.
+  const remembersScene = mode === 'scene' && cameraReady && !profile.localOnlyMemory;
+  useEffect(() => {
+    if (!remembersScene) return undefined;
+    const timer = setInterval(() => {
+      if (!getApiUrl()) return;
+      void (async () => {
+        const frame = await captureFrame();
+        if (frame) await observeForMemory(frame, await currentCoordinates()).catch(() => {});
+      })();
+    }, 20000);
+    return () => clearInterval(timer);
+  }, [remembersScene]);
 
   // Fold what the camera sees into the memory graph. Scene mode only: the
   // sign-reading view is a conversation, not a place.

@@ -9,7 +9,28 @@ import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from '../speec
 import { useVoice } from '../voice/VoiceControl';
 import { colors, HIT, radius, spacing } from '../theme/tokens';
 
+const TURN_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
+  left: 'arrow-back',
+  right: 'arrow-forward',
+  'slight-left': 'arrow-up',
+  'slight-right': 'arrow-up',
+  uturn: 'return-down-back',
+  arrive: 'flag',
+  straight: 'arrow-up',
+};
+const TURN_TILT: Record<string, string> = { 'slight-left': '-40deg', 'slight-right': '40deg' };
+
+function distanceLabel(meters: number) {
+  const feet = meters * 3.28084;
+  if (feet < 1000) return `${Math.max(10, Math.round(feet / 10) * 10)} ft`;
+  return `${(meters / 1609.344).toFixed(1)} mi`;
+}
+
 const SUGGESTIONS = [
+  "What's in front of me?",
+  'Read the text',
+  'Remember this',
+  'Where are my keys?',
   'Where am I?',
   'Take me to the nearest pharmacy',
   'Take me home',
@@ -21,7 +42,7 @@ const SUGGESTIONS = [
 export function AssistantScreen() {
   const params = useLocalSearchParams<{ prompt?: string }>();
   const voice = useVoice();
-  const { reply, busy, error, navigating, ask, setError } = voice.assistant;
+  const { reply, busy, error, navigating, guide, ask, setError } = voice.assistant;
   const handsFree = voice.handsFree;
   const [text, setText] = useState('');
   const [listening, setListening] = useState(false);
@@ -174,13 +195,37 @@ export function AssistantScreen() {
       ) : null}
 
       {navigating ? (
-        <GlassCard>
+        <GlassCard strong>
+          {guide ? (
+            <View
+              style={styles.guide}
+              accessible
+              accessibilityLabel={`${guide.say} ${distanceLabel(guide.remainingMeters)} left to ${guide.destination}.`}
+            >
+              <View style={styles.guideArrow}>
+                <Ionicons
+                  name={TURN_ICON[guide.turn] ?? 'arrow-up'}
+                  size={44}
+                  color={colors.onLight}
+                  style={TURN_TILT[guide.turn] ? { transform: [{ rotate: TURN_TILT[guide.turn] }] } : undefined}
+                />
+              </View>
+              <View style={styles.fill}>
+                <Text variant="section">{guide.stepMeters > 0 ? `In ${distanceLabel(guide.stepMeters)}` : 'Now'}</Text>
+                <Text variant="body">{guide.say}</Text>
+                <Text variant="caption" muted>
+                  {distanceLabel(guide.remainingMeters)} left to {guide.destination}
+                </Text>
+              </View>
+            </View>
+          ) : null}
           <View style={styles.row}>
             <Ionicons name="navigate-outline" size={22} color={colors.lime} />
             <Text variant="body" style={styles.fill}>
               Guiding you turn by turn. Keep GuideEye open. Directions do not mean a crossing is safe.
             </Text>
           </View>
+          <Button label="Which way?" tone="lime" disabled={busy} onPress={() => void ask('Which way?')} />
           <Button label="Stop navigation" tone="glass" disabled={busy} onPress={() => void ask('Stop navigation')} />
         </GlassCard>
       ) : null}
@@ -201,6 +246,15 @@ const styles = StyleSheet.create({
   bar: { flexDirection: 'row', alignItems: 'center', paddingTop: spacing.sm },
   row: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   fill: { flex: 1 },
+  guide: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: spacing.sm },
+  guideArrow: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.lime,
+  },
   actions: { gap: spacing.sm, marginTop: spacing.xs },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   input: {

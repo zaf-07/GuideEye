@@ -31,7 +31,11 @@ EXPO_PUBLIC_API_URL=http://<mac-lan-ip>:8000 npx expo run:ios --device
 | "Guide, in fifteen minutes take me home" | Starts that request in 15 minutes (app must stay open) |
 | "Guide, remind me in ten minutes to leave" | Spoken reminder |
 | "Guide, where am I" | Current address |
-| "Guide, what is in front of me" | Opens the camera in pocket mode |
+| "Guide, what is in front of me" | Opens the camera if needed and describes the scene |
+| "Guide, read this" | Reads the text the camera is pointed at |
+| "Guide, remember this" / "where are my keys" | Saves what the camera sees / recalls it later |
+| "Guide, pay this" then "yes" | Reads a payment code, pays only after a spoken yes |
+| "Guide, open camera" | Camera in pocket mode with spoken hazard warnings |
 | "Guide, open settings" / "go back" / "home screen" | Moves between screens |
 | "Guide, repeat that" / "stop talking" / "help" | Repeats, silences, lists examples |
 
@@ -45,6 +49,22 @@ EXPO_PUBLIC_API_URL=http://<mac-lan-ip>:8000 npx expo run:ios --device
 6. Lock and unlock the phone: listening resumes.
 7. Open Bridge: voice control pauses there (Bridge uses the microphone itself) and resumes on leaving.
 8. Settings → "Hands-free voice control" off: the pill disappears and the Ask screen shows its "Speak a request" button again.
+
+## Same features as the web app
+
+| Web app | iPhone app |
+|---|---|
+| Always-on microphone, "Guide" wake word | Yes, for a vision profile |
+| What is in front of me, read text, remember this, pay this (camera frame) | Yes, the assistant borrows the camera screen |
+| Hazard warnings while walking | Yes, camera screen in scene mode |
+| Walking directions, take me home, take me back, which way | Yes, spoken, with an arrow and distance card on the Ask screen |
+| Google map of the route | Not in the app: the "Open the route in Maps" button hands over to Apple or Google Maps |
+| Messages, calls, timers, buy with confirmation | Yes |
+| Family contacts | Yes, Family screen |
+| Home address setting | Yes, Settings |
+| Memory of what was seen, every 20 seconds | Yes, while the camera screen is open (off when "Keep memory on this device" is on) |
+| Bridge: sign to speech, speech to text | Yes, Bridge and Translate screens |
+| Vexo band microphone | Not in the iPhone app |
 
 ## Known limits
 

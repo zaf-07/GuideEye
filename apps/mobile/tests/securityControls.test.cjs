@@ -35,6 +35,7 @@ const apiStub = {
 };
 
 const vision = loadTs('src/vision.ts', {
+  './voice/frame': { noteFrame: () => {} },
   'expo-crypto': mockCrypto,
   './api': apiStub,
   './detector': {
@@ -120,6 +121,7 @@ test('native globals do not trigger browser hostname access', () => {
     global.window = {};
     delete global.document;
     const nativeVision = loadTs('src/vision.ts', {
+  './voice/frame': { noteFrame: () => {} },
       './api': apiStub,
       './detector': {
         detectObjects: () => Promise.resolve([]),
