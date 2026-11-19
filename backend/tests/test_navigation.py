@@ -115,6 +115,43 @@ class NavigatorTests(unittest.TestCase):
         nav.update('s', *CORNER)
         self.assertIn('No more turns. Safeway is', nav.next_turn('s', *CORNER))
 
+    def test_turn_is_announced_early_then_at_the_corner(self):
+        nav = Navigator(fake_place, fake_route)
+        run(nav.start('s', 'Take me to the nearest supermarket', *HOME))
+        early = nav.update('s', 37.76226, HOME[1])
+        self.assertEqual((early['say'], early['kind'], early['say_turn']),
+                         ('In 200 feet, turn left onto Illinois Street.', 'prepare', 'left'))
+        self.assertIsNone(nav.update('s', 37.76228, HOME[1])['say'])
+        corner = nav.update('s', *CORNER)
+        self.assertEqual((corner['kind'], corner['say_turn']), ('turn', 'left'))
+
+    def test_leaving_the_route_finds_a_new_one(self):
+        calls = []
+
+        async def counting_route(lat, lon, dest_lat, dest_lon):
+            calls.append((lat, lon))
+            return await fake_route(lat, lon, dest_lat, dest_lon)
+
+        nav = Navigator(fake_place, counting_route)
+        run(nav.start('s', 'Take me to the nearest supermarket', *HOME))
+        astray = (37.7612, -122.3856)
+        self.assertNotIn('off_route', nav.update('s', *astray))
+        self.assertTrue(nav.update('s', *astray)['off_route'])
+        reply = run(nav.follow('s', *astray))
+        self.assertEqual((reply['kind'], reply['rerouted'], calls[-1]), ('reroute', True, astray))
+        self.assertTrue(reply['say'].startswith('You have left the route. New directions. Head north'))
+        self.assertEqual(len(calls), 2)
+        run(nav.follow('s', *astray))
+        run(nav.follow('s', *astray))
+        self.assertEqual(len(calls), 2)
+
+    def test_compass_heading_replaces_the_walking_direction(self):
+        nav = Navigator(fake_place, fake_route)
+        run(nav.start('s', 'Take me to the nearest supermarket', *HOME))
+        facing_east = nav.update('s', 37.7612, HOME[1], heading=90)
+        self.assertEqual((facing_east['heading'], facing_east['next']['relative']), (90, 'to your left'))
+        self.assertEqual(navigation.distance_to_path(37.7612, -122.3856, [list(HOME), list(SHOP)]) > 80, True)
+
     def test_snapshot_has_a_path_steps_and_turn_arrows(self):
         nav = Navigator(fake_place, fake_route)
         self.assertEqual(nav.snapshot('s'), {'active': False})

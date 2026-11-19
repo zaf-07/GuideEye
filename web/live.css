@@ -237,7 +237,26 @@
 .route-steps li.current { color: var(--ink); font-weight: 700; }
 .route-actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 16px 14px; }
 .route-actions .route-stop { margin-left: auto; }
-.route-map.arrived .route-actions, .route-map.arrived .route-steps-box { display: none; }
+.route-map.arrived .route-actions, .route-map.arrived .route-steps-box, .route-map.arrived .route-hint { display: none; }
+.route-hint { margin: 0; padding: 0 16px 14px; font-size: 13.5px; color: var(--muted); }
+.route-hint[hidden] { display: none; }
+.route-turn.off .route-arrow { background: #e8590c; color: #fff; }
+.route-turn.off .route-relative { color: #e8590c; }
+.route-map.big { background: #000; border-color: #fff; }
+.route-map.big .route-arrow { width: 104px; height: 104px; border-radius: 26px; background: #ffe600; color: #000; }
+.route-map.big .route-arrow svg { width: 64px; height: 64px; }
+.route-map.big .route-distance { font-size: 42px; color: #fff; }
+.route-map.big .route-say { font-size: 25px; color: #fff; }
+.route-map.big .route-relative { font-size: 20px; color: #ffe600; }
+.route-map.big .route-progress-text { font-size: 19px; color: #fff; }
+.route-map.big .route-progress-text strong { color: #fff; }
+.route-map.big .route-bar { height: 12px; background: #333; }
+.route-map.big .route-bar i { background: #ffe600; }
+.route-map.big .route-canvas, .route-map.big iframe { height: 400px; }
+.route-map.big .route-steps-box, .route-map.big .route-hint { font-size: 18px; color: #fff; }
+.route-map.big .route-steps-box summary, .route-map.big .route-steps li.current { color: #fff; }
+.route-map.big .route-steps { color: #ddd; }
+.route-map.big .route-actions .btn { min-height: 52px; font-size: 18px; color: #fff; }
 @media (max-width: 560px) {
   .route-turn { flex-wrap: wrap; }
   .route-turn .btn { width: 100%; }

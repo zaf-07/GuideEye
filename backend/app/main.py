@@ -209,11 +209,12 @@ def memory_clear():
 # ---------- Location and directions ----------
 
 @app.post('/location')
-async def location_update(lat: float = Form(..., ge=-90, le=90), lon: float = Form(..., ge=-180, le=180), session: str = Form('default', max_length=64)):
+async def location_update(lat: float = Form(..., ge=-90, le=90), lon: float = Form(..., ge=-180, le=180), session: str = Form('default', max_length=64),
+                          heading: float | None = Form(None, ge=0, le=360)):
     """One GPS fix in. Adds a breadcrumb to the walked path, notes new places, and returns the next spoken direction, if any."""
     if memory.record_location(lat, lon):
         memory.visit(await navigation.place_name(lat, lon))
-    return navigator.update(session, lat, lon)
+    return await navigator.follow(session, lat, lon, heading)
 
 @app.get('/navigation/route')
 def navigation_route(session: str = 'default'):

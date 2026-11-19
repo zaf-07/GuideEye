@@ -22,6 +22,11 @@ GOOGLE_ROUTES_URL = 'https://routes.googleapis.com/directions/v2:computeRoutes'
 
 SEARCH_RADIUS_DEG = 0.035   # roughly 3-4 km around the user
 ANNOUNCE_WITHIN_M = 25      # speak a turn when this close to it
+PREPARE_WITHIN_M = 70
+PREPARE_BEYOND_M = 40
+OFF_ROUTE_M = 40
+OFF_ROUTE_FIXES = 2
+REROUTE_EVERY_S = 20
 ARRIVE_WITHIN_M = 30
 
 # Spoken phrases mapped to a search term Nominatim understands.
@@ -87,6 +92,23 @@ def relative_direction(heading: float, target: float) -> str:
         return 'behind you'
     side = 'right' if diff > 0 else 'left'
     return f'ahead to your {side}' if abs(diff) < 70 else f'to your {side}'
+
+
+def distance_to_path(lat: float, lon: float, path: list[list[float]]) -> float:
+    scale = math.cos(math.radians(lat))
+    best = float('inf')
+    for (lat1, lon1), (lat2, lon2) in zip(path, path[1:]):
+        ax, ay, bx, by = (lon1 - lon) * scale, lat1 - lat, (lon2 - lon) * scale, lat2 - lat
+        dx, dy = bx - ax, by - ay
+        length = dx * dx + dy * dy
+        t = 0.0 if length == 0 else min(1.0, max(0.0, -(ax * dx + ay * dy) / length))
+        best = min(best, math.hypot(ax + t * dx, ay + t * dy) * 111320)
+    return best
+
+
+def short_action(say: str) -> str:
+    action = say.split('. ')[0].rstrip('.')
+    return action[0].lower() + action[1:] if action else action
 
 
 TURN_WORDS = re.compile(r'\b(turn|bear|keep|slight|sharp|make a)\b[^.]*?\b(left|right)\b')
@@ -383,19 +405,29 @@ class Navigator:
         self._active[session] = {'name': name, 'lat': dest_lat, 'lon': dest_lon, 'steps': route['steps'],
                                  'next': 1, 'started': time.time(), 'provider': route.get('provider', 'openstreetmap'),
                                  'polyline': route.get('polyline', ''), 'path': route.get('path') or [],
-                                 'distance_m': route.get('distance_m', 0), 'fix': (lat, lon), 'heading': None}
+                                 'distance_m': route.get('distance_m', 0), 'fix': (lat, lon), 'heading': None,
+                                 'warned': set(), 'off': 0, 'rerouted': 0.0}
         first = route['steps'][0]['say'] if route['steps'] else ''
         return (f'{name} is {spoken_distance(route["distance_m"])} away, about {spoken_minutes(route["duration_s"])} on foot. '
                 f'{first} I will tell you each turn. Directions do not mean a crossing is safe.')
 
     @staticmethod
-    def _track(state: dict, lat: float, lon: float) -> None:
+    def _track(state: dict, lat: float, lon: float, heading: float | None = None) -> None:
         last = state.get('fix')
-        if last is None:
+        if heading is not None:
+            state['heading'] = heading % 360
+            state['fix'] = (lat, lon)
+        elif last is None:
             state['fix'] = (lat, lon)
         elif haversine(*last, lat, lon) >= 5:
             state['heading'] = bearing(*last, lat, lon)
             state['fix'] = (lat, lon)
+
+    @staticmethod
+    def _path(state: dict) -> list[list[float]]:
+        if len(state.get('path') or []) >= 2:
+            return state['path']
+        return [[step['lat'], step['lon']] for step in state['steps']] + [[state['lat'], state['lon']]]
 
     @staticmethod
     def _next(state: dict, lat: float, lon: float) -> dict:
@@ -411,7 +443,7 @@ class Navigator:
         return {'index': index, 'say': say, 'turn': kind, 'distance_m': round(distance),
                 'distance': spoken_distance(distance), 'relative': relative, 'lat': turn_lat, 'lon': turn_lon}
 
-    def update(self, session: str, lat: float, lon: float) -> dict:
+    def update(self, session: str, lat: float, lon: float, heading: float | None = None) -> dict:
         """Call with each GPS fix. `say` is set only when there is something new to speak."""
         state = self._active.get(session)
         if state is None:
@@ -420,17 +452,44 @@ class Navigator:
         result = {'active': True, 'say': None, 'destination': state['name'], 'remaining': spoken_distance(remaining)}
         if remaining <= ARRIVE_WITHIN_M:
             del self._active[session]
-            return {**result, 'active': False, 'say': f'You have arrived at {state["name"]}.'}
-        self._track(state, lat, lon)
+            return {**result, 'active': False, 'say': f'You have arrived at {state["name"]}.', 'kind': 'arrive'}
+        self._track(state, lat, lon, heading)
         steps, index = state['steps'], state['next']
         if index < len(steps) - 1:  # the last step is the arrival, handled above
             step = steps[index]
-            if haversine(lat, lon, step['lat'], step['lon']) <= ANNOUNCE_WITHIN_M:
+            away = haversine(lat, lon, step['lat'], step['lon'])
+            if away <= ANNOUNCE_WITHIN_M:
                 state['next'] = index + 1
-                result['say'] = step['say']
+                result.update(say=step['say'], kind='turn', say_turn=turn_kind(step['say']))
+            elif PREPARE_BEYOND_M < away <= PREPARE_WITHIN_M and index not in state.setdefault('warned', set()):
+                state['warned'].add(index)
+                result.update(say=f'In {spoken_distance(away)}, {short_action(step["say"])}.', kind='prepare',
+                              say_turn=turn_kind(step['say']))
+        off = distance_to_path(lat, lon, self._path(state)) > OFF_ROUTE_M
+        state['off'] = state.get('off', 0) + 1 if off else 0
+        if state['off'] >= OFF_ROUTE_FIXES and not result['say']:
+            result['off_route'] = True
         result.update(remaining_m=round(remaining), total_m=round(state.get('distance_m') or 0),
                       heading=state.get('heading'), next=self._next(state, lat, lon))
         return result
+
+    async def follow(self, session: str, lat: float, lon: float, heading: float | None = None) -> dict:
+        result = self.update(session, lat, lon, heading)
+        state = self._active.get(session)
+        if state is None or not result.get('off_route') or time.time() - state.get('rerouted', 0) < REROUTE_EVERY_S:
+            return result
+        state['rerouted'] = time.time()
+        try:
+            route = await self._find_route(lat, lon, state['lat'], state['lon'])
+        except Exception:
+            return {**result, 'say': 'You have left the route. I could not find a new one yet.', 'kind': 'off_route'}
+        state.update(steps=route['steps'], next=1, path=route.get('path') or [], distance_m=route.get('distance_m', 0),
+                     provider=route.get('provider', 'openstreetmap'), polyline=route.get('polyline', ''),
+                     warned=set(), off=0)
+        first = route['steps'][0]['say'] if route['steps'] else ''
+        fresh = self.update(session, lat, lon, heading)
+        return {**fresh, 'say': f'You have left the route. New directions. {first}'.strip(), 'kind': 'reroute',
+                'say_turn': turn_kind(first), 'rerouted': True}
 
     def next_turn(self, session: str, lat: float, lon: float) -> str | None:
         state = self._active.get(session)
@@ -442,10 +501,8 @@ class Navigator:
         where = f' It is {upcoming["relative"]}.' if upcoming['relative'] else ''
         if upcoming['turn'] == 'arrive':
             return f'No more turns. {state["name"]} is {remaining} away.{where}'
-        action = upcoming['say'].split('. ')[0].rstrip('.')
-        action = action[0].lower() + action[1:]
         lead = 'Now' if upcoming['distance_m'] <= ANNOUNCE_WITHIN_M else f'In {upcoming["distance"]}'
-        return f'{lead}, {action}.{where} {remaining} to {state["name"]} in total.'
+        return f'{lead}, {short_action(upcoming["say"])}.{where} {remaining} to {state["name"]} in total.'
 
     def snapshot(self, session: str) -> dict:
         state = self._active.get(session)

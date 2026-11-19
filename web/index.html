@@ -11,7 +11,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter+Tight:wght@400;500;600&display=swap">
   <link rel="stylesheet" href="landing.css?v=5">
-  <link rel="stylesheet" href="live.css?v=23">
+  <link rel="stylesheet" href="live.css?v=25">
   <title>GuideBand — The AI that sees, remembers and acts for you</title>
 </head>
 <body>
@@ -234,9 +234,12 @@
               <div class="route-actions">
                 <button class="btn btn-glass glass btn-small" id="routeRecenter" type="button">Find me</button>
                 <button class="btn btn-glass glass btn-small" id="routeOverview" type="button">Whole route</button>
+                <button class="btn btn-glass glass btn-small" id="routeRotate" type="button">North up</button>
+                <button class="btn btn-glass glass btn-small" id="routeBig" type="button">Larger text</button>
                 <button class="btn btn-glass glass btn-small" id="routeMapClose" type="button">Hide map</button>
                 <button class="btn btn-glass glass btn-small route-stop" id="routeStop" type="button">Stop directions</button>
               </div>
+              <p class="route-hint" id="routeHint" hidden>Vibration: one long buzz means left, two mean right, three mean turn around. A turn you have reached repeats its buzz.</p>
             </section>
             <div class="live-controls">
               <div class="row wrap">
@@ -523,6 +526,6 @@
 
   <script src="landing.js?v=4"></script>
   <script src="signs.js?v=16"></script>
-  <script src="live.js?v=35"></script>
+  <script src="live.js?v=37"></script>
 </body>
 </html>
