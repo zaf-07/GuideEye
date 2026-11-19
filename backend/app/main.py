@@ -16,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .config import load_env
+from .nearby_api import router as nearby_router
 from .planner import plan
 from .services import bridge, checkout, llm, messaging, navigation, speech, vision
 from .services.assistant import Assistant
@@ -44,6 +45,7 @@ app.add_middleware(
     allow_methods=['GET', 'POST', 'DELETE'],
     allow_headers=['*'],
 )
+app.include_router(nearby_router)
 tasks: dict[str, dict] = {}
 memory = Memory()
 orders = Orders()
