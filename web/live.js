@@ -565,7 +565,7 @@
   }
 
   // ---------- See: continuous local hazard warnings ----------
-  const sources = { gemini: 'Gemini', groq: 'Groq', local: 'on-device' };
+  const sources = { gemini: 'Gemini', groq: 'Groq', local: 'on-device', harnessrouter: 'HarnessRouter agent' };
   const spokenAt = new Map(), seenAt = new Map(), waiting = new Set();
   let looping = false, busy = false, personSeenAt = 0;
   let candidateKey = '', stable = 0, narratedKey = '', narratedAt = 0;
@@ -665,6 +665,7 @@
     awaitingAnswer = reply.intent === 'place_set'; // the assistant asked for an address, or to confirm one
     const item = addMessage('guide', reply.say, meta);
     speak(reply.say);
+    if (reply.errand && reply.errand.status === 'in_progress') watchErrand(reply.errand.id, 0);
     // Contact setup stays conversational: if a person stops after starting it,
     // gently check whether they still want to dictate the WhatsApp number.
     if (reply.intent === 'contact_waiting') {
@@ -699,6 +700,21 @@
     if (reply.navigating) el('navStatus').textContent = 'Directions are on. Keep walking — I will speak each turn.';
     if (reply.intent === 'bridge') selectTab('bridge');
     if (activeTab === 'memory') loadMemory();
+  }
+
+  function watchErrand(id, tries) {
+    if (tries >= 40) return;
+    setTimeout(async () => {
+      try {
+        const body = new FormData();
+        body.append('text', 'is my errand ready');
+        body.append('session', session);
+        const reply = await call('/assistant', { method: 'POST', body });
+        if (!reply.errand || reply.errand.id !== id) return;
+        if (reply.errand.status === 'in_progress') return watchErrand(id, tries + 1);
+        showReply(reply, '');
+      } catch (error) { watchErrand(id, tries + 1); }
+    }, 8000);
   }
 
   let queued = '';

@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 from .config import load_env
 from .nearby_api import router as nearby_router
 from .planner import plan
-from .services import bridge, checkout, llm, messaging, navigation, speech, supermemory, vision
+from .services import bridge, checkout, errand, llm, messaging, navigation, speech, supermemory, vision
 from .services.assistant import Assistant
 from .services.memory import Memory
 from .services.payments import CATALOGUE, Orders, is_test_key, money
@@ -99,6 +99,7 @@ def system_status():
                      'menu': [{'item': name, 'price': money(cents)} for name, cents in CATALOGUE.values()]},
         'memory': {'notes': len(memory.notes(1000)), 'objects': len(memory.sightings()), 'path_points': len(memory.path()),
                    'connections': len(memory.graph_snapshot(1000)['edges']), 'supermemory': memory.remote_status()},
+        'errands': {'agent': 'harnessrouter' if errand.configured() else 'off'},
         'navigation': {'maps': 'google' if os.getenv('GOOGLE_MAPS_API_KEY') else 'openstreetmap'},
         'speech': {'voice': speech.provider() if speech.configured() else 'browser', 'transcription': speech.transcriber()},
         'messages': {'whatsapp': 'direct' if messaging.configured() else ('desktop_send' if messaging.desktop_enabled() else 'opens_whatsapp')},

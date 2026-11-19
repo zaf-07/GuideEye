@@ -49,6 +49,7 @@ This table is the honest state of the repository, not the pitch.
 | See — local YOLO hazard warnings plus a Gemini scene description, with fallbacks | Built: `POST /vision/analyze`, live in the demo |
 | Remember — private text-only memory and recall | Built: `/memory`, "Where did I leave my keys?" in the demo |
 | Act — payment gated by a spoken yes | Built: quote, then pay only on yes. Simulated unless a Stripe **test** key is set; live keys are refused |
+| Errands — "Read this letter and tell me what to do", "Explain this discharge summary" | Built: a HarnessRouter agent does the multi-step work in the background and the answer is spoken. It prepares and never sends; a spoken yes continues the same task. Needs `HR_API_KEY` in `backend/.env`; check it with `python scripts/errand_check.py` |
 | Assistant — one sentence in, one spoken reply out | Built: `POST /assistant` routes to see, recall, remember and pay |
 | Hands-free mode — say "Guide, …" with no buttons; automatic description when the scene changes | Built in the demo (browser speech recognition) |
 | Walking directions — "Take me to the nearest supermarket", turn-by-turn by GPS, "Take me back" | Built: OpenStreetMap search and foot routing, `POST /location` |
