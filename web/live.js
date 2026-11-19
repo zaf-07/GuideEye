@@ -933,9 +933,20 @@
       const remote = data.supermemory || {};
       const hint = el('memoryRemote');
       if (hint) {
-        hint.textContent = remote.configured
-          ? `Long-term memory on · synced to Supermemory as “${remote.namespace}”`
-          : 'Long-term memory off · everything stays on this machine';
+        if (!remote.configured) {
+          hint.textContent = 'Long-term memory off · everything stays on this machine';
+        } else {
+          // Spell out what has actually gone over, so "nothing in the dashboard"
+          // can be told apart from a broken key.
+          const bits = [`Long-term memory on · Supermemory namespace “${remote.namespace}”`];
+          bits.push(`${remote.synced || 0} note${remote.synced === 1 ? '' : 's'} synced`);
+          if (remote.pending_writes) bits.push(`${remote.pending_writes} in flight`);
+          if (remote.errors) bits.push(`${remote.errors} failed`);
+          if (remote.skipped_requests) {
+            bits.push(`${remote.skipped_requests} spoken request${remote.skipped_requests === 1 ? '' : 's'} kept on this device`);
+          }
+          hint.textContent = bits.join(' · ');
+        }
       }
     } catch {}
   }

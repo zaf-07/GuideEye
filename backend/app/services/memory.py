@@ -21,6 +21,11 @@ from .navigation import haversine
 
 log = logging.getLogger(__name__)
 
+
+def _mirror_requests() -> bool:
+    """Whether the wearer's own spoken requests are synced, not just what was seen."""
+    return os.getenv('SUPERMEMORY_MIRROR_REQUESTS', '').strip().lower() in {'1', 'true', 'yes', 'on'}
+
 RECALL_PROMPT = (
     'You are GuideBand, the memory of a blind or low-vision person, speaking aloud. '
     'Answer the question from the memory notes provided, in one or two short sentences. '
@@ -91,6 +96,8 @@ class Memory:
         # Background mirror writes to Supermemory, so speech never waits on the network.
         self._mirrors: set[asyncio.Task] = set()
         self.remote_errors = 0
+        self.mirrored = 0
+        self.skipped_requests = 0
 
     # ----- writing -----
 
@@ -241,7 +248,14 @@ class Memory:
 
     def _mirror(self, text: str, kind: str, when: float, place: str, triples: list) -> None:
         """Fire the Supermemory write off in the background and forget about it."""
-        if not supermemory.configured() or kind == 'asked':
+        if not supermemory.configured():
+            return
+        # The log of spoken requests is the wearer's own words, so it stays on
+        # the device unless they ask for it to be synced. Counted either way:
+        # silently dropping every note is indistinguishable from a broken key,
+        # and that is exactly how it looks when nothing else is being written.
+        if kind == 'asked' and not _mirror_requests():
+            self.skipped_requests += 1
             return
         try:
             loop = asyncio.get_running_loop()
@@ -254,6 +268,7 @@ class Memory:
     async def _mirror_now(self, text: str, kind: str, when: float, place: str, triples: list) -> None:
         try:
             await supermemory.remember(text, kind=kind, when=when, place=place, triples=triples)
+            self.mirrored += 1
         except supermemory.SupermemoryError as error:
             self.remote_errors += 1
             log.warning('Supermemory write failed, keeping the local note only: %s', error)
@@ -268,7 +283,12 @@ class Memory:
             'configured': supermemory.configured(),
             'namespace': supermemory.namespace() if supermemory.configured() else None,
             'pending_writes': len(self._mirrors),
+            'synced': self.mirrored,
             'errors': self.remote_errors,
+            # Named so "nothing is syncing" can be told apart from "nothing is
+            # being written" and from "the key is wrong".
+            'skipped_requests': self.skipped_requests,
+            'mirrors_requests': _mirror_requests(),
         }
 
     def clear(self) -> None:

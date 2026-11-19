@@ -156,7 +156,9 @@ class SupermemoryTests(unittest.TestCase):
         self.assertEqual(len(self.memory.notes()), 1)
         self.assertEqual(self.memory.remote_errors, 1)
 
-    def test_requests_are_not_mirrored(self):
+    def test_requests_stay_local_by_default_but_are_counted(self):
+        # Skipping must be visible: a silent drop is indistinguishable from a
+        # broken key when requests are the only notes being written.
         async def scenario():
             with mock.patch.dict('os.environ', {'SUPERMEMORY_API_KEY': 'test-key'}):
                 with mock.patch.object(supermemory, 'remember') as remember:
@@ -164,6 +166,29 @@ class SupermemoryTests(unittest.TestCase):
                     await self.memory.flush()
                     remember.assert_not_called()
         asyncio.run(scenario())
+        status = self.memory.remote_status()
+        self.assertEqual(status['skipped_requests'], 1)
+        self.assertFalse(status['mirrors_requests'])
+
+    def test_requests_are_mirrored_when_asked_for(self):
+        async def scenario():
+            with mock.patch.dict('os.environ', {'SUPERMEMORY_API_KEY': 'test-key',
+                                                'SUPERMEMORY_MIRROR_REQUESTS': 'true'}):
+                with mock.patch.object(supermemory, 'remember') as remember:
+                    self.memory.add_note('asked', 'I asked for a coffee.')
+                    await self.memory.flush()
+                    remember.assert_called_once()
+        asyncio.run(scenario())
+        self.assertEqual(self.memory.remote_status()['skipped_requests'], 0)
+
+    def test_counts_what_actually_synced(self):
+        async def scenario():
+            with mock.patch.dict('os.environ', {'SUPERMEMORY_API_KEY': 'test-key'}):
+                with mock.patch.object(supermemory, 'remember'):
+                    self.memory.add_note('snapshot', 'A mug is on the desk.')
+                    await self.memory.flush()
+        asyncio.run(scenario())
+        self.assertEqual(self.memory.remote_status()['synced'], 1)
 
     def test_recall_survives_a_supermemory_outage(self):
         async def scenario():
