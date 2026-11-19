@@ -11,7 +11,7 @@ services:
         value: "false"
       - key: CORS_ORIGINS
         value: https://zaf-07.github.io
-      - key: GEMINI_API_KEY
+      - key: GROQ_API_KEY
         sync: false
       - key: HR_API_KEY
         sync: false
