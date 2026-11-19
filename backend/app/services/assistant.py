@@ -10,11 +10,12 @@ first read back and held until the user answers yes.
 """
 from __future__ import annotations
 
+import os
 import re
 import time
 from urllib.parse import quote
 
-from . import checkout, messaging, navigation, vision
+from . import checkout, errand, messaging, navigation, vision
 from .memory import Memory
 from .payments import Orders, PaymentError
 
@@ -150,12 +151,24 @@ READ_QUESTION = (
     'Read aloud every piece of text you can see in this image, word for word, starting with the largest. '
     'Say only the text itself. If there is no readable text, say that you cannot see any text.'
 )
+ERRAND = re.compile(
+    r"\b(?:letter|document|paperwork|form|invoice|bill|statement|discharge|prescription|contract|lease"
+    r"|lab (?:result|chart|report)s?|test results?|visit (?:note|summary)|doctor'?s? note)\b"
+    r"|\b(?:look up|research|find out)\b|\berrand\b"
+    r"|\b(?:explain|summari[sz]e|summary)\b|\bhelp me understand\b"
+    r"|\bwhat (?:do|should|must) i (?:need to |have to )?do\b|\bwhat does (?:this|that|it) (?:mean|ask|want)\b"
+    r"|\btell me what (?:to do|i (?:need|have) to do|(?:this|that|it) (?:means|asks|wants))\b"
+)
+ERRAND_STATUS = re.compile(r"\berrand\b|\b(?:is it|is that|are you) (?:ready|done|finished)\b|\bany (?:update|news)\b|\bstill working\b")
+ERRAND_ASKS = re.compile(r"should i go ahead\?\s*$", re.IGNORECASE)
+ERRAND_TTL_SECONDS = 900
 HELP = re.compile(r'\bwhat can you do\b|^\W*help\b')
 GREETING = re.compile(r'^\W*(hi|hello|hey|good (morning|afternoon|evening)|howdy)\b')
 
 HELP_TEXT = (
     'I can tell you what is in front of you, read text, remember where things are, tell you where you are, '
-    'guide you on foot to a place nearby, message your family, and pay after you say yes. '
+    'guide you on foot to a place nearby, message your family, pay after you say yes, '
+    'and run errands such as reading a letter and telling you what it asks for. '
     'Try: what is in front of me?'
 )
 MESSAGE_TTL_SECONDS = 60
@@ -229,6 +242,8 @@ def route(text: str, has_pending: bool = False, navigating: bool = False) -> str
         return 'scan_pay'
     if PAY.search(value):
         return 'pay_quote'
+    if ERRAND.search(value) and not REMEMBER.search(value):
+        return 'errand'
     if RECALL.search(value):
         return 'recall'
     if REMEMBER.search(value):
@@ -254,7 +269,9 @@ def message_body(text: str) -> str:
 class Assistant:
     def __init__(self, memory: Memory, orders: Orders, detector=None, navigator=None, place_name=None,
                  read_frame=None, send_whatsapp=None, send_desktop=None, geocode=None,
-                 lookup_address=None) -> None:
+                 lookup_address=None, errands=None) -> None:
+        self.errands = errands or errand
+        self._errands: dict[str, dict] = {}
         self.geocode = geocode or navigation.geocode
         self.lookup_address = lookup_address or self._lookup_address
         self.send_whatsapp = send_whatsapp or messaging.send_whatsapp
@@ -308,8 +325,16 @@ class Assistant:
             intent = 'contact_continue'
         if message and not order:
             intent = intent.replace('pay_', 'message_')
+        task = self._errands.get(session)
+        if task and time.time() > task['expires']:
+            task = self._errands.pop(session, None) and None
+        if task and not (order or message or call or pending_contact):
+            if not task['done'] and (intent in ('errand', 'nothing_pending') or ERRAND_STATUS.search(text.lower())):
+                intent = 'errand_status'
+            elif task['done'] and task['asks'] and intent == 'nothing_pending':
+                intent = 'errand_followup' if YES.search(text.lower()) else 'errand_dismiss'
         reply = {'intent': intent, 'heard': text, 'say': '', 'order': None, 'confirm': None, 'open_url': None,
-                 'map_url': None, 'timer': None,
+                 'map_url': None, 'timer': None, 'errand': None,
                  'warnings': [], 'detections': [], 'provider': None}
         if not intent.endswith(('_confirm', '_cancel', '_waiting')) and intent not in ('forget', 'nothing_pending', 'recall'):
             self.memory.add_note('asked', f'I asked: "{text}"')
@@ -397,6 +422,15 @@ class Assistant:
             reply['map_url'] = self._map_url(session, location, before)
         elif intent == 'bridge':
             reply['say'] = 'Bridge is on. I will speak signs I can read, and show what you say as large text.'
+        elif intent == 'errand':
+            await self._errand(reply, session, text, text, image, mime)
+        elif intent == 'errand_status':
+            await self._errand_status(reply, session, task)
+        elif intent == 'errand_followup':
+            await self._errand(reply, session, task['request'], 'Yes, go ahead.', None, mime, task)
+        elif intent == 'errand_dismiss':
+            self._errands.pop(session, None)
+            reply['say'] = 'Okay. I left it as it is.'
         elif intent == 'help':
             reply['say'] = HELP_TEXT
         elif intent == 'greeting':
@@ -407,6 +441,46 @@ class Assistant:
             place = await self.place_name(*location) if location else ''
             await self._look(reply, intent, text, image, mime, place)
         return reply
+
+    # ----- errands -----
+
+    async def _errand(self, reply: dict, session: str, request: str, text: str, image: bytes | None, mime: str,
+                      previous: dict | None = None) -> None:
+        if not self.errands.configured():
+            reply['say'] = 'Errands are not set up on this device yet.'
+            return
+        try:
+            task = await self.errands.start(text, f'guideeye-{session}', image, mime, previous)
+            if not task['done']:
+                task = await self.errands.wait(task['id'], float(os.getenv('ERRAND_WAIT_SECONDS', '45')))
+        except errand.ErrandError:
+            reply['say'] = 'I could not reach the errand agent. Please try again in a moment.'
+            return
+        self._finish_errand(reply, session, request, task)
+
+    async def _errand_status(self, reply: dict, session: str, task: dict) -> None:
+        try:
+            fresh = await self.errands.get(task['id'])
+        except errand.ErrandError:
+            reply['say'] = 'I could not check on that errand. Please ask again in a moment.'
+            return
+        self._finish_errand(reply, session, task['request'], fresh)
+
+    def _finish_errand(self, reply: dict, session: str, request: str, task: dict) -> None:
+        answer = task['text'] if task['status'] == 'completed' else ''
+        self._errands[session] = {
+            'id': task['id'], 'session_id': task['session_id'], 'request': request, 'done': task['done'],
+            'asks': bool(ERRAND_ASKS.search(answer)), 'expires': time.time() + ERRAND_TTL_SECONDS,
+        }
+        reply['errand'] = {'id': task['id'], 'status': task['status']}
+        reply['provider'] = 'harnessrouter'
+        if not task['done']:
+            reply['say'] = 'I am still working on that. Ask me: is my errand ready?'
+        elif answer:
+            reply['say'] = answer
+            self.memory.add_note('errand', f'Errand "{request}": {answer}')
+        else:
+            reply['say'] = 'I could not finish that errand. Nothing was sent or changed.'
 
     # ----- pay -----
 
