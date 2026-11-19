@@ -18,10 +18,10 @@ object CommandRouter {
         c.contains("whatsapp")||c.contains("message")||c.contains("сообщ") -> Plan("whatsapp","Open WhatsApp? Sending a message still requires confirmation.",true)
         c.contains("timer")||c.contains("таймер") -> Plan("timer:${minutes(c)}","Set a timer for ${minutes(c)} minutes",false)
         c.contains("youtube")||c.contains("ютуб") -> Plan("youtube","Open YouTube",false)
-        c.contains("bridge")||c.contains("мост") -> Plan("bridge","Open GuideBand Bridge",false)
+        c.contains("bridge")||c.contains("мост") -> Plan("bridge","Open GuideEye Bridge",false)
         c.contains("search")||c.contains("google")||c.contains("найди")||c.contains("загугли") -> Plan("search:${searchTerms(c)}","Search the web for ${searchTerms(c)}",false)
         c.startsWith("open ")||c.startsWith("открой ") -> Plan("open:${c.substringAfter(' ')}","Open ${c.substringAfter(' ')}",false)
-        c.contains("stop listening")||c.contains("не слушай") -> Plan("stop","Stop GuideBand listening",false)
+        c.contains("stop listening")||c.contains("не слушай") -> Plan("stop","Stop GuideEye listening",false)
         else -> Plan("search:$c","Search the web for $c",false)
     }}
     fun dispatch(context:Context,raw:String){val p=plan(raw);if(p.consequential){context.startActivity(Intent(context,ConfirmActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK).putExtra("command",p.command).putExtra("summary",p.summary))}else executeConfirmed(context,p.command)}
@@ -31,7 +31,7 @@ object CommandRouter {
         command=="whatsapp"->launch(context,context.packageManager.getLaunchIntentForPackage("com.whatsapp"),"https://wa.me/")
         command=="youtube"->launch(context,context.packageManager.getLaunchIntentForPackage("com.google.android.youtube"),"https://youtube.com")
         command=="bridge"->launch(context,Intent(context,BridgeActivity::class.java),null)
-        command.startsWith("timer:")->launch(context,Intent(AlarmClock.ACTION_SET_TIMER).putExtra(AlarmClock.EXTRA_LENGTH,command.substringAfter(':').toInt()*60).putExtra(AlarmClock.EXTRA_MESSAGE,"GuideBand timer").putExtra(AlarmClock.EXTRA_SKIP_UI,false),null)
+        command.startsWith("timer:")->launch(context,Intent(AlarmClock.ACTION_SET_TIMER).putExtra(AlarmClock.EXTRA_LENGTH,command.substringAfter(':').toInt()*60).putExtra(AlarmClock.EXTRA_MESSAGE,"GuideEye timer").putExtra(AlarmClock.EXTRA_SKIP_UI,false),null)
         command.startsWith("search:")->launch(context,Intent(Intent.ACTION_WEB_SEARCH).putExtra(SearchManager.QUERY,command.substringAfter(':')),"https://www.google.com/search?q="+Uri.encode(command.substringAfter(':')))
         command.startsWith("open:")->openNamed(context,command.substringAfter(':'))
     }}

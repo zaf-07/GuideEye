@@ -1,4 +1,4 @@
-# GuideBand — как снять демо-видео (2 минуты)
+# GuideEye — как снять демо-видео (2 минуты)
 
 Реплики, которые нужно произносить, даны на английском **жирным**. Всё остальное — что делать.
 
@@ -8,7 +8,7 @@
 
 ## 0. Что должно быть под рукой
 
-- Ноутбук с запущенным сервисом GuideBand.
+- Ноутбук с запущенным сервисом GuideEye.
 - Второй телефон — показать QR-код оплаты.
 - Связка ключей (или другой заметный предмет) на столе.
 - Второй человек — для сцен 2 и 6.
@@ -101,7 +101,7 @@ python -m uvicorn backend.app.main:app --port 8000
 
 **Говорите:**
 
-> **"Vision apps for blind people make you aim a phone and tap buttons — and they forget everything when you close them. GuideBand is different. It sees, remembers, and acts. Hands-free."**
+> **"Vision apps for blind people make you aim a phone and tap buttons — and they forget everything when you close them. GuideEye is different. It sees, remembers, and acts. Hands-free."**
 
 ---
 
@@ -236,7 +236,7 @@ python -m uvicorn backend.app.main:app --port 8000
 
 **Говорите:**
 
-> **"Built on Vexo, Gemini, ElevenLabs, Stripe and Deepgram. GuideBand — an accessibility layer for every AI wearable."**
+> **"Built on Vexo, Gemini, ElevenLabs, Stripe and Deepgram. GuideEye — an accessibility layer for every AI wearable."**
 
 ---
 
@@ -252,7 +252,7 @@ python -m uvicorn backend.app.main:app --port 8000
 | QR не сканируется | Поднесите ближе, уберите блики, прибавьте яркость. Запасной вариант: "Buy me a coffee" |
 | WhatsApp открылся, но не отправил | Окно WhatsApp не успело открыться. Не трогайте мышь; при повторе нажмите Enter вручную |
 | Жест не распознаётся | Держите руку неподвижно 1–2 секунды, ладонью к камере. Самые надёжные: 👍 и ✌️ |
-| "Not connected to the GuideBand service" | Сервис упал. Запустите команду из раздела 1.1 и обновите страницу |
+| "Not connected to the GuideEye service" | Сервис упал. Запустите команду из раздела 1.1 и обновите страницу |
 | Страница выглядит по-старому | Ctrl+Shift+R |
 
 ---

@@ -157,7 +157,7 @@ class SupermemoryTests(unittest.TestCase):
         self.assertEqual(self.memory.remote_errors, 1)
 
     def test_requests_are_synced_by_default(self):
-        # They are most of what GuideBand knows; holding them back left the
+        # They are most of what GuideEye knows; holding them back left the
         # long-term memory permanently empty.
         async def scenario():
             with mock.patch.dict('os.environ', {'SUPERMEMORY_API_KEY': 'test-key'}):

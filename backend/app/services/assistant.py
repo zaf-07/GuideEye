@@ -1,4 +1,4 @@
-"""The GuideBand assistant: one spoken sentence in, one spoken reply out.
+"""The GuideEye assistant: one spoken sentence in, one spoken reply out.
 
 `route` decides what the user wants with plain rules, so the safety-relevant
 decisions (is this a payment? was that a yes?) never depend on a language model.
@@ -135,6 +135,11 @@ NAV = re.compile(
     r'\b(take|guide|walk|navigate|lead|bring|get) me to\b|\b(directions?|route|way) to\b'
     r'|\bhow do i get to\b|\bnavigate to\b|\b(nearest|closest)\b'
 )
+NAV_NEXT = re.compile(
+    r"\bwhich way\b|\b(where|when) do i (turn|go)\b|\bnext (turn|step|direction)\b|\b(do|should) i turn\b"
+    r"|\bhow (far|much further|much longer)\b|\bam i (going|on) the right way\b"
+    r"|\brepeat (the |that )?(directions?|turn|step)\b"
+)
 NAV_STOP = re.compile(r'\b(stop|cancel|end) (the )?(navigation|directions|route|guiding)\b')
 GO_BACK = re.compile(r'\b(take|guide|walk|lead|bring) me back\b|\bway back\b|\bgo back to (the )?start\b')
 READ = re.compile(r'\bread\b|\bwhat does (it|that|this|the) .*\bsay\b|\bwhat is written\b')
@@ -153,7 +158,7 @@ HELP_TEXT = (
 MESSAGE_TTL_SECONDS = 60
 
 
-def route(text: str, has_pending: bool = False) -> str:
+def route(text: str, has_pending: bool = False, navigating: bool = False) -> str:
     value = text.lower().strip()
     if has_pending:
         if YES.search(value):
@@ -167,6 +172,8 @@ def route(text: str, has_pending: bool = False) -> str:
         return 'timer'
     if NAV_STOP.search(value):
         return 'nav_stop'
+    if navigating and NAV_NEXT.search(value):
+        return 'nav_next'
     if GO_BACK.search(value):
         return 'go_back'
     if PLACE_SET.search(value) or PLACE_ASK.search(value):
@@ -244,7 +251,7 @@ class Assistant:
             change = self._place_changes.pop(session, None) and None
         if change and not order and not message and not call:
             return await self._continue_place_change(session, change, text, location)
-        intent = route(text, bool(order or message))
+        intent = route(text, bool(order or message), self.navigator.active(session) is not None)
         if (intent in ('see', 'place_go', 'navigate', 'go_back', 'where_am_i', 'recall', 'help', 'timer')
                 and LOOSE_MESSAGE.search(text.lower()) and self.memory.find_contact(text)):
             # "Message Zack that I am going home right now" names a contact, so it is a message, not a
@@ -331,6 +338,12 @@ class Assistant:
             reply['map_url'] = self._map_url(session, location, before)
         elif intent == 'nav_stop':
             reply['say'] = 'Navigation stopped.' if self.navigator.stop(session) else 'No navigation is running.'
+        elif intent == 'nav_next':
+            if location is None:
+                reply['say'] = 'I need your location for directions. Please turn location on.'
+            else:
+                reply['say'] = self.navigator.next_turn(session, *location) or 'No navigation is running.'
+            reply['navigating'] = self.navigator.active(session) is not None
         elif intent in ('navigate', 'go_back'):
             before = self.navigator.active(session)
             reply['say'] = await self._navigate(session, intent, text, location)
@@ -341,7 +354,7 @@ class Assistant:
         elif intent == 'help':
             reply['say'] = HELP_TEXT
         elif intent == 'greeting':
-            reply['say'] = 'Hello! I am GuideBand. I can describe what is in front of you, navigate, read text, or remember your items.'
+            reply['say'] = 'Hello! I am GuideEye. I can describe what is in front of you, navigate, read text, or remember your items.'
         elif image is None:
             reply['say'] = 'I need the camera for that. Please turn the camera on.'
         else:
@@ -392,7 +405,7 @@ class Assistant:
                 return
             place = await self.place_name(*location)
             body = (f'I am near {place}. ' if place else 'Here is where I am. ') + \
-                   f'Map: https://maps.google.com/?q={location[0]:.5f},{location[1]:.5f} (sent with GuideBand)'
+                   f'Map: https://maps.google.com/?q={location[0]:.5f},{location[1]:.5f} (sent with GuideEye)'
         self._messages[session] = {
             'name': contact['name'], 'phone': contact['phone'], 'text': body, 'expires': time.time() + MESSAGE_TTL_SECONDS,
             'url': f'https://wa.me/{contact["phone"]}?text={quote(body)}',

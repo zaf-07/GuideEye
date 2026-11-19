@@ -29,12 +29,12 @@ def _cents(value) -> int | None:
 
 
 def payment_code(item: str, amount: float) -> str:
-    """The text a GuideBand payment QR code carries."""
+    """The text a GuideEye payment QR code carries."""
     return f'guideband://pay?item={quote(item)}&amount={amount:.2f}'
 
 
 def parse_payment_code(text: str) -> tuple[str, int] | None:
-    """Accepts a GuideBand pay link, JSON, or plain text such as 'Coffee $4.50'."""
+    """Accepts a GuideEye pay link, JSON, or plain text such as 'Coffee $4.50'."""
     text = (text or '').strip()
     if not text:
         return None

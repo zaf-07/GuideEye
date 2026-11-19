@@ -1,4 +1,4 @@
-"""Supermemory: long-term, relationship-aware recall for GuideBand.
+"""Supermemory: long-term, relationship-aware recall for GuideEye.
 
 The local SQLite memory stays the source of truth and keeps working with no
 network. When SUPERMEMORY_API_KEY is set, every note is mirrored to Supermemory,
@@ -118,7 +118,7 @@ def document_body(
         # ones before generating memories. Measured against the live API, a lone
         # note sat in `dreamingStatus: dreaming` for over three minutes while its
         # chunks were already indexed — and a memory that is not generated cannot
-        # be recalled. GuideBand is asked "where are my keys?" seconds after it
+        # be recalled. GuideEye is asked "where are my keys?" seconds after it
         # saw them, so each note is processed on its own. It bills one extra
         # operation per document; set SUPERMEMORY_DREAMING=dynamic to trade that
         # latency back for the lower cost.
@@ -127,7 +127,7 @@ def document_body(
         # "20 minutes ago" resolves against the sighting.
         'date': _iso(when),
         'supportingContext': (
-            'Memories of a blind or low-vision person wearing GuideBand. Entities are '
+            'Memories of a blind or low-vision person wearing GuideEye. Entities are '
             'everyday objects, places and people. Relationships are mostly spatial '
             '(on, in, under, next to) and temporal (where something was last seen).'
         ),

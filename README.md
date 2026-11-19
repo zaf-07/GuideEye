@@ -1,12 +1,12 @@
-# GuideBand
+# GuideEye
 
 **The AI that sees, remembers, and acts for you.**
 
-GuideBand is a hands-free AI assistant for blind and low-vision people. A Vexo bracelet is the voice: the user just talks. A chest-clipped phone is the eyes. An agent keeps a private memory of what it saw and heard, and takes real actions — like paying — only after a spoken "yes".
+GuideEye is a hands-free AI assistant for blind and low-vision people. A Vexo bracelet is the voice: the user just talks. A chest-clipped phone is the eyes. An agent keeps a private memory of what it saw and heard, and takes real actions — like paying — only after a spoken "yes".
 
 Built at VexoHacks (AI Wearables Hackathon, Y Combinator, San Francisco).
 
-> Prototype assistive technology. GuideBand is not a replacement for a white cane, guide dog, orientation and mobility training, emergency services or verified navigation instructions.
+> Prototype assistive technology. GuideEye is not a replacement for a white cane, guide dog, orientation and mobility training, emergency services or verified navigation instructions.
 
 ## The problem
 
@@ -131,10 +131,10 @@ Download the APK from the [latest release](https://github.com/zaf-07/GuideBand/r
 
 After sideloading it:
 
-1. Open GuideBand and tap **Choose GuideBand as assistant**. Accept the Android assistant-role prompt.
-2. Tap **Enable phone control** and explicitly enable GuideBand under Accessibility. The service does not passively store screen contents.
+1. Open GuideEye and tap **Choose GuideEye as assistant**. Accept the Android assistant-role prompt.
+2. Tap **Enable phone control** and explicitly enable GuideEye under Accessibility. The service does not passively store screen contents.
 3. Tap **Allow notifications**, then **Start voice assistant** while the activity is visible.
-4. Keep the persistent "GuideBand is active" notification. Its Stop action immediately ends microphone capture.
+4. Keep the persistent "GuideEye is active" notification. Its Stop action immediately ends microphone capture.
 5. Say "Guide, open YouTube", "Guide, set a timer for 10 minutes", "Guide, search for coffee nearby", or "Guide, let's walk to Safeway".
 
 Calls, WhatsApp and journey sharing are treated as consequential and show a confirmation screen. Android still owns the final call/send action. The demo recognizer is a software foreground listener; unlike Google Assistant's privileged DSP hotword path it consumes more battery and availability depends on the device speech-recognition service.
@@ -156,7 +156,7 @@ The supplied unit enumerates as `Vexo Open band` at `/dev/cu.usbmodem1101` (USB 
 python3 scripts/vexo_probe.py
 ```
 
-GuideBand uses the official [`vexo-open-kit`](https://github.com/VexoAI-Org/vexo-open-kit) contract. The team band number is stored once as `20`; every connection targets and re-verifies exactly `Vexo-HACK-20` and service UUID `254f0001-df82-4a9c-a2b5-563a0f6b2021`. It never scans for or connects to another team's band.
+GuideEye uses the official [`vexo-open-kit`](https://github.com/VexoAI-Org/vexo-open-kit) contract. The team band number is stored once as `20`; every connection targets and re-verifies exactly `Vexo-HACK-20` and service UUID `254f0001-df82-4a9c-a2b5-563a0f6b2021`. It never scans for or connects to another team's band.
 
 Set up the unchanged kit and local dependencies, then verify the real device:
 
@@ -196,7 +196,7 @@ A normal APK with broad permissions cannot silently control every app. Android i
 - No raw video or audio is stored.
 - Low-confidence results are flagged instead of stated as fact.
 - Money never moves without a spoken yes; payments run in Stripe test mode.
-- Object detection is not distance measurement: GuideBand says where something is in view, not how far away it is.
+- Object detection is not distance measurement: GuideEye says where something is in view, not how far away it is.
 
 ## Test
 

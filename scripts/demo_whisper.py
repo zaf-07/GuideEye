@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Interactive demonstration of the GuideBand Micro-Whisper navigation loop.
+"""Interactive demonstration of the GuideEye Micro-Whisper navigation loop.
 
 Simulates the exact timing using the Android phone's vibrator:
 1. Instant phone tactile click / vibration (0 ms latency reflex trigger)
@@ -18,7 +18,7 @@ STEPS = [
 
 def run():
     print("\n" + "=" * 50)
-    print("  GuideBand: Android Phone Haptic Navigation Demo")
+    print("  GuideEye: Android Phone Haptic Navigation Demo")
     print("=" * 50)
     print("Наденьте наушники или включите звук на Mac.\n")
     time.sleep(1)

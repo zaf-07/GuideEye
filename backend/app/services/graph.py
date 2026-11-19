@@ -7,7 +7,7 @@ those (subject, relation, object) triples out of plain sentences so the memory
 can be walked as a graph instead of grepped as a bag of words.
 
 Extraction is rule-based and runs offline. It is deliberately conservative:
-a missed edge costs a little recall, a wrong edge would make GuideBand confidently
+a missed edge costs a little recall, a wrong edge would make GuideEye confidently
 say the wrong thing to someone who cannot check it.
 """
 from __future__ import annotations
@@ -54,7 +54,7 @@ _LEADING = {
     'leaning', 'leans', 'leant', 'hanging', 'hangs', 'hung', 'propped', 'parked', 'stored', 'kept',
     'tucked', 'folded', 'stacked', 'perched', 'balanced', 'laid', 'lay', 'set', 'still', 'now',
 }
-# The person using GuideBand, as a node in the graph ("you were at the cafe").
+# The person using GuideEye, as a node in the graph ("you were at the cafe").
 USER = 'you'
 # Entities that carry no meaning on their own.
 _JUNK = {'', 'it', 'them', 'there', 'here', 'one', 'thing', 'things', 'side', 'top', 'front', 'back', 'me'}

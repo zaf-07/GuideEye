@@ -9,7 +9,7 @@ function createWindow() {
     minWidth: 420,
     minHeight: 640,
     backgroundColor: '#eef6f1',
-    title: 'GuideBand',
+    title: 'GuideEye',
     icon: iconPath,
     webPreferences: {
       contextIsolation: true,

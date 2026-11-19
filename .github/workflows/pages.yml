@@ -1,4 +1,4 @@
-name: Deploy GuideBand web
+name: Deploy GuideEye web
 on:
   push: { branches: [main] }
   workflow_dispatch:

@@ -1,6 +1,6 @@
-# GuideBand — Devpost submission
+# GuideEye — Devpost submission
 
-**Project name:** GuideBand
+**Project name:** GuideEye
 
 **Tagline (short description field):**
 The hands-free AI that sees, remembers, and acts for blind and low-vision people — and never acts without a spoken yes.
@@ -17,7 +17,7 @@ That takes the hand they need for a white cane or a guide dog. And the moment th
 
 Meanwhile a new wave of AI wearables is shipping with a microphone and a voice — but no eyes, and no thought for accessibility.
 
-So we built the missing layer. **GuideBand turns a Vexo wristband into your voice and a chest-clipped camera into your eyes.** It doesn't just describe the world. It **sees, remembers, and acts** — and it never acts without your spoken yes.
+So we built the missing layer. **GuideEye turns a Vexo wristband into your voice and a chest-clipped camera into your eyes.** It doesn't just describe the world. It **sees, remembers, and acts** — and it never acts without your spoken yes.
 
 ## What it does
 
@@ -28,12 +28,12 @@ You just talk. No screen, no aiming, no buttons.
 - **Ask anything.** *"What's in front of me?"* gets a short spoken description. *"Read the text"* reads signs and labels word for word.
 
 ### 🧠 Remember
-- **A private memory of your day.** GuideBand notes what it saw, what you asked, and where you were — as text only. No photos, no video, no audio are ever stored.
+- **A private memory of your day.** GuideEye notes what it saw, what you asked, and where you were — as text only. No photos, no video, no audio are ever stored.
 - **Ask later.** *"Where did I leave my keys?"* — it answers from its notes. If it never saw them, it says so. **It does not guess.**
 - **Yours to erase.** *"Forget everything"* wipes it.
 
 ### 💳 Act
-- **Pay by voice.** Say *"Buy me a coffee"*, or hold up a payment QR code and say *"Pay this."* GuideBand reads the item and price aloud, then pays through Stripe **only after you say "Yes."**
+- **Pay by voice.** Say *"Buy me a coffee"*, or hold up a payment QR code and say *"Pay this."* GuideEye reads the item and price aloud, then pays through Stripe **only after you say "Yes."**
 - **A spending limit it will not cross.** Anything over the limit is refused out loud.
 - **Reach your family.** *"Tell Mom where I am"* drafts a WhatsApp message with your address, reads it back, and sends it after the same spoken yes.
 
@@ -52,7 +52,7 @@ Short directional cues — *"Left"*, *"Forward"*, *"Right"*, *"Stop!"* — for o
 
 ## How we built it
 
-GuideBand is **hybrid by design: anything safety-critical runs on the device, and only reasoning and voice use the cloud.**
+GuideEye is **hybrid by design: anything safety-critical runs on the device, and only reasoning and voice use the cloud.**
 
 | Layer | What we used | What it does |
 | --- | --- | --- |
@@ -96,17 +96,17 @@ GuideBand is **hybrid by design: anything safety-critical runs on the device, an
 
 We also learned that the most impressive demo is not the most useful product. Speed came from moving work onto the device, not from a bigger model.
 
-## What's next for GuideBand
+## What's next for GuideEye
 
-- **Every AI wearable.** GuideBand is built as a layer, not a device. Vexo is first; glasses and pins are next.
+- **Every AI wearable.** GuideEye is built as a layer, not a device. Vexo is first; glasses and pins are next.
 - **A phone app for the chest camera**, for real outdoor navigation.
 - **A larger sign vocabulary**, built with Deaf signers rather than for them.
 - **Fully offline mode**, with vision models running on the phone.
 - **Public transit**: bus arrivals and station guidance.
 
-There are hundreds of millions of people with vision loss, and every new AI wearable ships without them in mind. GuideBand is how those devices become usable for them.
+There are hundreds of millions of people with vision loss, and every new AI wearable ships without them in mind. GuideEye is how those devices become usable for them.
 
-*Prior work: GuideBand builds on ideas from our earlier project GuideLens and reuses its ASL fingerspelling model. Everything else was built at VexoHacks.*
+*Prior work: GuideEye builds on ideas from our earlier project GuideLens and reuses its ASL fingerspelling model. Everything else was built at VexoHacks.*
 
 ---
 

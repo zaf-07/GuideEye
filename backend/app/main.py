@@ -38,7 +38,7 @@ async def lifespan(_: FastAPI):
     band_stop()
 
 
-app = FastAPI(title='GuideBand Local API', version='0.3.0', lifespan=lifespan)
+app = FastAPI(title='GuideEye Local API', version='0.3.0', lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[o.strip() for o in os.getenv('CORS_ORIGINS', DEFAULT_ORIGINS).split(',')],
@@ -332,11 +332,16 @@ async def recall_search(body: RecallSearch):
 # ---------- Location and directions ----------
 
 @app.post('/location')
-async def location_update(lat: float = Form(..., ge=-90, le=90), lon: float = Form(..., ge=-180, le=180), session: str = Form('default', max_length=64)):
+async def location_update(lat: float = Form(..., ge=-90, le=90), lon: float = Form(..., ge=-180, le=180), session: str = Form('default', max_length=64),
+                          heading: float | None = Form(None, ge=0, le=360)):
     """One GPS fix in. Adds a breadcrumb to the walked path, notes new places, and returns the next spoken direction, if any."""
     if memory.record_location(lat, lon):
         memory.visit(await navigation.place_name(lat, lon))
-    return navigator.update(session, lat, lon)
+    return await navigator.follow(session, lat, lon, heading)
+
+@app.get('/navigation/route')
+def navigation_route(session: str = 'default'):
+    return navigator.snapshot(session)
 
 # ---------- Family contacts ----------
 

@@ -1,4 +1,4 @@
-name: GuideBand release builds
+name: GuideEye release builds
 on:
   workflow_dispatch:
     inputs:
