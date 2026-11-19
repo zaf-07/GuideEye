@@ -108,6 +108,7 @@ test('tflite startup notice suppression intercepts console.error and LogBox noti
       'expo-status-bar': { StatusBar: () => null },
       'react-native': { LogBox: { ignoreLogs: () => {} } },
       'react-native-safe-area-context': { SafeAreaProvider: () => null },
+      '../components/NearbyPrompt': { NearbyPrompt: () => null },
       '../src/state/ProfileContext': { ProfileProvider: () => null },
       '../src/theme/tokens': { colors: { canvasDeep: '#07110F' } },
     });

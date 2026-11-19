@@ -26,6 +26,7 @@ export interface Profile {
   replyFormat: ReplyFormat;
   /** Keep the memory graph on-device only. */
   localOnlyMemory: boolean;
+  nearbyDiscovery: boolean;
   displayName?: string;
   onboardedAt?: string;
 }
@@ -38,6 +39,7 @@ export const DEFAULT_PROFILE: Profile = {
   captions: true,
   replyFormat: 'both',
   localOnlyMemory: true,
+  nearbyDiscovery: false,
 };
 
 export const hasVisionTrack = (p: Profile) =>

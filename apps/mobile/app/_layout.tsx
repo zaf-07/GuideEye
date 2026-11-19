@@ -2,6 +2,7 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { LogBox } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { NearbyPrompt } from '../components/NearbyPrompt';
 import { ProfileProvider } from '../src/state/ProfileContext';
 import { colors } from '../src/theme/tokens';
 
@@ -55,6 +56,7 @@ export default function RootLayout() {
             animation: 'slide_from_right',
           }}
         />
+        <NearbyPrompt />
       </ProfileProvider>
     </SafeAreaProvider>
   );
