@@ -78,6 +78,11 @@ async def detect(body: bytes) -> list[dict]:
 @app.get('/health')
 def health(): return {'status':'ok','time':now(),'raw_media_storage':False}
 
+@app.get('/maps/config')
+def maps_config():
+    """Browser map configuration. Restrict this key to approved web origins."""
+    return {'embed_key': os.getenv('GOOGLE_MAPS_BROWSER_API_KEY') or os.getenv('GOOGLE_MAPS_API_KEY', '')}
+
 @app.get('/system/status')
 def system_status():
     stripe_key = os.getenv('STRIPE_SECRET_KEY', '')

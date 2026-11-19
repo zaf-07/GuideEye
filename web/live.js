@@ -10,6 +10,7 @@
   let api = (store.get('guideband_api') ?? (sameOrigin ? '' : 'http://localhost:8000')).replace(/\/$/, '');
   const session = Math.random().toString(36).slice(2, 12);
   let online = false, activeTab = 'assistant';
+  let mapsEmbedKey = '', mapDestination = null, mapOrigin = null, mapLastRendered = 0;
   let bandCursor = -1, bandLive = false; // the Vexo band: declared early, the microphone code reads it
 
   el('apiInput').value = api || location.origin;
@@ -26,6 +27,8 @@
   async function checkService() {
     try {
       const s = await call('/system/status');
+      const map = await call('/maps/config').catch(() => ({ embed_key: '' }));
+      mapsEmbedKey = map.embed_key || '';
       online = true;
       const cloud = s.vision.cloud_providers.length ? 'Gemini connected' : 'no cloud model (local answers only)';
       const detector = s.vision.detector.state === 'unavailable' ? 'detector unavailable' : 'on-device detector';
@@ -55,6 +58,32 @@
     el('liveOffline').hidden = online;
   }
   el('retryBtn').onclick = checkService;
+  el('routeMapClose').onclick = () => { mapDestination = null; el('routeMap').hidden = true; el('routeMapFrame').src = 'about:blank'; };
+
+  function mapDistance(a, b) {
+    if (!a || !b) return Infinity;
+    const r = 6371000, p = Math.PI / 180, dLat = (b.lat - a.lat) * p, dLon = (b.lon - a.lon) * p;
+    const v = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * p) * Math.cos(b.lat * p) * Math.sin(dLon / 2) ** 2;
+    return 2 * r * Math.asin(Math.sqrt(v));
+  }
+  function renderRouteMap(force = false) {
+    if (!mapsEmbedKey || !position || !mapDestination) return;
+    if (!force && Date.now() - mapLastRendered < 15000 && mapDistance(position, mapOrigin) < 20) return;
+    const params = new URLSearchParams({ key: mapsEmbedKey, origin: `${position.lat},${position.lon}`, destination: `${mapDestination.lat},${mapDestination.lon}`, mode: 'walking' });
+    el('routeMapFrame').src = 'https://www.google.com/maps/embed/v1/directions?' + params;
+    el('routeMap').hidden = false;
+    mapOrigin = { ...position }; mapLastRendered = Date.now();
+  }
+  function showRouteMap(mapUrl) {
+    try {
+      const route = new URL(mapUrl);
+      const destination = route.searchParams.get('destination');
+      if (!destination) return;
+      const [lat, lon] = destination.split(',').map(Number);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+      mapDestination = { lat, lon }; renderRouteMap(true);
+    } catch {}
+  }
   el('apiForm').onsubmit = e => {
     e.preventDefault();
     const value = el('apiInput').value.trim().replace(/\/$/, '');
@@ -371,13 +400,8 @@
       window.open(reply.open_url, '_blank', 'noopener');
     }
     if (reply.map_url) {
-      // The route on a map, for a companion or a judge to look at.
-      const map = document.createElement('a');
-      map.className = 'btn btn-primary btn-small msg-link';
-      map.href = reply.map_url; map.target = '_blank'; map.rel = 'noopener';
-      map.textContent = 'Open the map';
-      item.append(map);
-      window.open(reply.map_url, '_blank', 'noopener');
+      showRouteMap(reply.map_url);
+      if (!mapsEmbedKey) addMessage('guide', 'The route is active. Enable Google Maps Embed API to show the companion map here.');
     }
     if (reply.timer) {
       const { seconds, label } = reply.timer;
@@ -768,6 +792,7 @@
   function onPosition(fix) {
     const first = !position;
     position = { lat: fix.coords.latitude, lon: fix.coords.longitude };
+    renderRouteMap();
     if (first) {
       refreshPermissions();
       if (retryWithLocation) { const again = retryWithLocation; retryWithLocation = ''; ask(again); }
