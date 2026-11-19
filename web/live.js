@@ -85,10 +85,32 @@
       online = false;
       el('liveStatus').textContent = 'Not connected to the GuideBand service';
       el('liveDot').className = 'dot dot-bad';
+      // Say what was actually tried. "Not running" is only one of the reasons
+      // this fails: the usual one is the page being opened from somewhere the
+      // service is not, and that is not visible without naming the addresses.
+      const tried = apiCandidates().map(c => c || location.origin);
+      const fromFile = location.protocol === 'file:';
+      if (el('offlineTried')) {
+        el('offlineTried').textContent = 'Tried ' + tried.join(', ') + '.';
+        el('offlineTried').hidden = false;
+      }
+      if (el('offlineTitle')) {
+        el('offlineTitle').textContent = fromFile
+          ? 'This page cannot reach the service'
+          : 'The GuideBand service is not running';
+      }
+      if (el('offlineHint')) el('offlineHint').hidden = !fromFile && location.port === '8000';
     }
     el('liveOffline').hidden = online;
   }
-  el('retryBtn').onclick = checkService;
+  el('retryBtn').onclick = () => checkService();
+  // Escape hatch for an address saved against a port that is no longer there.
+  if (el('resetApiBtn')) el('resetApiBtn').onclick = () => {
+    api = '';
+    store.set('guideband_api', '');
+    el('apiInput').value = location.origin;
+    checkService();
+  };
   el('routeMapClose').onclick = () => { mapDestination = null; el('routeMap').hidden = true; el('routeMapFrame').src = 'about:blank'; };
 
   function mapDistance(a, b) {

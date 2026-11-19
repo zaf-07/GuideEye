@@ -188,10 +188,15 @@
         </div>
 
         <div class="live-offline" id="liveOffline" hidden>
-          <h3>The GuideBand service is not running</h3>
+          <h3 id="offlineTitle">The GuideBand service is not running</h3>
+          <p id="offlineTried" hidden></p>
           <p>The demo needs the local service. From the project folder, run:</p>
           <pre><code>python -m uvicorn backend.app.main:app --port 8000</code></pre>
-          <button class="btn btn-small" type="button" id="retryBtn">Check again</button>
+          <p id="offlineHint" class="hint">Then open this page at <strong>http://localhost:8000</strong> — opening the file directly will not work, because the browser blocks it from reaching the service.</p>
+          <div class="row wrap">
+            <button class="btn btn-small" type="button" id="retryBtn">Check again</button>
+            <button class="btn btn-small" type="button" id="resetApiBtn">Reset the service address</button>
+          </div>
         </div>
 
         <div class="live-grid">
@@ -493,6 +498,6 @@
 
   <script src="landing.js?v=4"></script>
   <script src="signs.js?v=16"></script>
-  <script src="live.js?v=33"></script>
+  <script src="live.js?v=34"></script>
 </body>
 </html>
