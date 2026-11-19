@@ -1,4 +1,4 @@
-import { CSSProperties, useEffect, useRef } from 'react';
+import { CSSProperties, useEffect, useRef, useState } from 'react';
 import { ASLGestureEngine, type ASLSessionState } from '../src/aslClassifier';
 import { ASLWordEngine, type ASLWordState } from '../src/aslWordClassifier.web';
 import { HandSignReader, type HandSignState } from '../src/handSigns';
@@ -413,6 +413,7 @@ export default function HandTracker({
 }: HandTrackerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [status, setStatus] = useState('Starting camera…');
   const sequenceRef = useRef<number[][]>([]);
   const frameImagesRef = useRef<string[]>([]);
   const smoothedHandsRef = useRef<Landmark[][]>([]);
@@ -509,6 +510,43 @@ export default function HandTracker({
 
     async function initialise() {
       try {
+        setStatus('Starting camera…');
+        // A phone browser holds the whole pipeline in one tab: the MediaPipe
+        // wasm runtime, the holistic model, and every video frame. At 720p
+        // each frame buffer is about 3.7MB, and iOS Safari responds to the
+        // pressure by killing the tab and reloading the page mid-session.
+        // Landmarks are normalised to 0-1, so a smaller capture changes the
+        // feature contract not at all — only the precision of very small
+        // hands. Desktops, which have the headroom, keep 720p.
+        const smallScreen =
+          typeof window !== 'undefined' &&
+          (window.matchMedia?.('(pointer: coarse)').matches || window.innerWidth < 900);
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: 'user',
+            width: { ideal: smallScreen ? 640 : 1280 },
+            height: { ideal: smallScreen ? 480 : 720 },
+            // Ask for a steady 30 fps. The word model reads 64-frame windows
+            // (~2 s at 30 fps); a higher rate would shorten that window.
+            frameRate: { ideal: 30 },
+          },
+          audio: false,
+        });
+
+        if (!active) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+
+        const video = videoRef.current;
+        const canvas = canvasRef.current;
+        if (!video || !canvas) throw new Error('Camera preview could not be prepared.');
+
+        video.srcObject = stream;
+        await video.play();
+
+        setStatus('Loading hand tracking…');
+
         const runtime = await getVisionRuntime();
         const vision = await runtime.FilesetResolver.forVisionTasks(mediapipeAssets.wasmRoot);
         let fallbackSetup: Promise<void> | undefined;
@@ -548,39 +586,7 @@ export default function HandTracker({
 
         if (!active) return;
 
-        // A phone browser holds the whole pipeline in one tab: the MediaPipe
-        // wasm runtime, the holistic model, and every video frame. At 720p
-        // each frame buffer is about 3.7MB, and iOS Safari responds to the
-        // pressure by killing the tab and reloading the page mid-session.
-        // Landmarks are normalised to 0-1, so a smaller capture changes the
-        // feature contract not at all — only the precision of very small
-        // hands. Desktops, which have the headroom, keep 720p.
-        const smallScreen =
-          typeof window !== 'undefined' &&
-          (window.matchMedia?.('(pointer: coarse)').matches || window.innerWidth < 900);
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: 'user',
-            width: { ideal: smallScreen ? 640 : 1280 },
-            height: { ideal: smallScreen ? 480 : 720 },
-            // Ask for a steady 30 fps. The word model reads 64-frame windows
-            // (~2 s at 30 fps); a higher rate would shorten that window.
-            frameRate: { ideal: 30 },
-          },
-          audio: false,
-        });
-
-        if (!active) {
-          stream.getTracks().forEach((track) => track.stop());
-          return;
-        }
-
-        const video = videoRef.current;
-        const canvas = canvasRef.current;
-        if (!video || !canvas) throw new Error('Camera preview could not be prepared.');
-
-        video.srcObject = stream;
-        await video.play();
+        setStatus('');
 
         const context = canvas.getContext('2d');
         if (!context) throw new Error('Landmark canvas is not available.');
@@ -850,7 +856,12 @@ export default function HandTracker({
       } catch (error) {
         if (active) {
           const message = error instanceof Error ? error.message : 'Unable to start hand tracking.';
-          reportContext(0, `Hand tracking unavailable: ${message}`);
+          const denied = error instanceof DOMException && (error.name === 'NotAllowedError' || error.name === 'NotFoundError' || error.name === 'NotReadableError');
+          const shown = denied
+            ? 'Camera unavailable. Allow camera access for this page, or close the app that is using it.'
+            : `Hand tracking unavailable: ${message}`;
+          setStatus(shown);
+          reportContext(0, shown);
         }
       }
     }
@@ -876,6 +887,7 @@ export default function HandTracker({
         aria-hidden={!showLandmarks}
         style={{ ...styles.canvas, visibility: showLandmarks ? 'visible' : 'hidden' }}
       />
+      {status ? <div role="status" style={styles.status}>{status}</div> : null}
     </div>
   );
 }
@@ -904,6 +916,19 @@ const styles: Record<string, CSSProperties> = {
     transform: 'scaleX(-1)',
     transformOrigin: 'center',
     filter: 'drop-shadow(0 0 5px rgba(200,255,114,.68))',
+    pointerEvents: 'none',
+  },
+  status: {
+    position: 'absolute',
+    top: 12,
+    left: 12,
+    right: 12,
+    padding: '8px 12px',
+    borderRadius: 10,
+    background: 'rgba(7,17,15,.82)',
+    color: '#E8FFD0',
+    font: '600 13px/1.35 system-ui, sans-serif',
+    textAlign: 'center',
     pointerEvents: 'none',
   },
 };
