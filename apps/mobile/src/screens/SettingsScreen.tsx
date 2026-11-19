@@ -282,6 +282,17 @@ export function SettingsScreen() {
         />
       </GlassCard>
 
+      {hasVisionTrack(profile) ? (
+        <GlassCard>
+          <Row
+            title="Hands-free voice control"
+            caption="The microphone stays on while GuideEye is open. Say “Guide”, then your request, from any screen. Speech is recognised in English."
+            value={profile.voiceControl !== false}
+            onChange={(v) => patch({ voiceControl: v })}
+          />
+        </GlassCard>
+      ) : null}
+
       <GlassCard>
         <Row
           title="Find nearby GuideEye users"

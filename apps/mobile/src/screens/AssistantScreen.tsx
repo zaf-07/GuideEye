@@ -6,7 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Button, Chip, Display, GlassCard, RoundButton, Screen, Text } from '../components';
 import { assistantConfigured } from '../assistant';
 import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from '../speechRecognition';
-import { useAssistant } from '../useAssistant';
+import { useVoice } from '../voice/VoiceControl';
 import { colors, HIT, radius, spacing } from '../theme/tokens';
 
 const SUGGESTIONS = [
@@ -20,7 +20,9 @@ const SUGGESTIONS = [
 
 export function AssistantScreen() {
   const params = useLocalSearchParams<{ prompt?: string }>();
-  const { reply, busy, error, navigating, ask, setError } = useAssistant();
+  const voice = useVoice();
+  const { reply, busy, error, navigating, ask, setError } = voice.assistant;
+  const handsFree = voice.handsFree;
   const [text, setText] = useState('');
   const [listening, setListening] = useState(false);
   const started = useRef(false);
@@ -32,16 +34,19 @@ export function AssistantScreen() {
     void ask(String(params.prompt));
   }, [ask, configured, params.prompt]);
 
-  useSpeechRecognitionEvent('start', () => setListening(true));
+  useSpeechRecognitionEvent('start', () => {
+    if (!handsFree) setListening(true);
+  });
   useSpeechRecognitionEvent('end', () => setListening(false));
   useSpeechRecognitionEvent('error', (event) => {
+    if (handsFree) return;
     setListening(false);
     if (event.error !== 'aborted' && event.error !== 'no-speech') {
       setError('Voice input could not start. Type your request instead.');
     }
   });
   useSpeechRecognitionEvent('result', (event) => {
-    if (!event.isFinal) return;
+    if (handsFree || !event.isFinal) return;
     const heard = event.results[0]?.transcript.trim();
     if (heard) void ask(heard);
   });
@@ -93,6 +98,16 @@ export function AssistantScreen() {
         </GlassCard>
       ) : null}
 
+      {handsFree ? (
+        <GlassCard>
+          <View style={styles.row}>
+            <Ionicons name="mic-outline" size={22} color={colors.lime} />
+            <Text variant="body" style={styles.fill}>
+              Hands-free is on. Say “Guide”, then your request, from any screen.
+            </Text>
+          </View>
+        </GlassCard>
+      ) : (
       <Button
         label={listening ? 'Listening. Tap to stop' : 'Speak a request'}
         tone="lime"
@@ -101,6 +116,7 @@ export function AssistantScreen() {
         icon={<Ionicons name={listening ? 'stop-circle-outline' : 'mic-outline'} size={24} color={colors.onLight} />}
         hint="Starts listening for one request."
       />
+      )}
 
       <GlassCard>
         <Text variant="label" muted>
@@ -162,7 +178,7 @@ export function AssistantScreen() {
           <View style={styles.row}>
             <Ionicons name="navigate-outline" size={22} color={colors.lime} />
             <Text variant="body" style={styles.fill}>
-              Guiding you turn by turn. Keep this screen open. Directions do not mean a crossing is safe.
+              Guiding you turn by turn. Keep GuideEye open. Directions do not mean a crossing is safe.
             </Text>
           </View>
           <Button label="Stop navigation" tone="glass" disabled={busy} onPress={() => void ask('Stop navigation')} />
