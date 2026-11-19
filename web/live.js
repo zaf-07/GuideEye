@@ -846,7 +846,19 @@
       };
       data.notes.forEach(n => add(n.text, n.kind + ' · ' + ago(nowSeconds - n.created)));
       data.objects.forEach(o => add(o.label + ' — ' + o.position, 'detector · ' + ago(nowSeconds - o.last_seen)));
+      // The relationship graph: what each thing was found on, in or beside.
+      (data.connections || []).forEach(c => add(
+        c.subject + ' — ' + c.relation.replace(/_/g, ' ') + ' — ' + c.object,
+        'connection · ' + ago(nowSeconds - c.created),
+      ));
       if (!list.children.length) { const empty = document.createElement('li'); empty.className = 'memory-empty'; empty.textContent = 'Nothing remembered yet.'; list.append(empty); }
+      const remote = data.supermemory || {};
+      const hint = el('memoryRemote');
+      if (hint) {
+        hint.textContent = remote.configured
+          ? `Long-term memory on · synced to Supermemory as “${remote.namespace}”`
+          : 'Long-term memory off · everything stays on this machine';
+      }
     } catch {}
   }
   el('memoryRefresh').onclick = loadMemory;

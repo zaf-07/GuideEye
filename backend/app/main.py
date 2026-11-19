@@ -86,7 +86,8 @@ def system_status():
         'vision': {'detector': vision.detector.status(), 'cloud_providers': vision.configured_providers(), 'model': llm.model()},
         'payments': {'mode': 'stripe_test' if is_test_key(stripe_key) else ('refused_live_key' if stripe_key else 'simulated'),
                      'menu': [{'item': name, 'price': money(cents)} for name, cents in CATALOGUE.values()]},
-        'memory': {'notes': len(memory.notes(1000)), 'objects': len(memory.sightings()), 'path_points': len(memory.path())},
+        'memory': {'notes': len(memory.notes(1000)), 'objects': len(memory.sightings()), 'path_points': len(memory.path()),
+                   'connections': len(memory.graph_snapshot(1000)['edges']), 'supermemory': memory.remote_status()},
         'navigation': {'maps': 'openstreetmap'},
         'speech': {'voice': speech.provider() if speech.configured() else 'browser', 'transcription': speech.transcriber()},
         'messages': {'whatsapp': 'direct' if messaging.configured() else ('desktop_send' if messaging.desktop_enabled() else 'opens_whatsapp')},
@@ -169,7 +170,22 @@ async def memory_observe(image: UploadFile = File(...), lat: float | None = Form
     return await memory.snapshot(body, image.content_type, vision.local_description(detections), place)
 
 @app.get('/memory')
-def memory_list(): return {'notes': memory.notes(), 'objects': memory.sightings(), 'path_points': len(memory.path()), 'stores_media': False}
+def memory_list():
+    graph = memory.graph_snapshot()
+    return {'notes': memory.notes(), 'objects': memory.sightings(), 'path_points': len(memory.path()),
+            'connections': graph['edges'], 'stores_media': False, 'supermemory': memory.remote_status()}
+
+@app.post('/memory/reindex')
+def memory_reindex():
+    """Rebuild the relationship graph from the notes already stored."""
+    return memory.reindex_relations()
+
+@app.get('/memory/graph')
+def memory_graph(around: str | None = None, depth: int = 2):
+    """The relationship graph: everything, or the part around one thing."""
+    if around:
+        return {'around': around, 'edges': memory.neighbours(around, depth=depth)}
+    return memory.graph_snapshot()
 
 @app.delete('/memory')
 def memory_clear():
