@@ -32,6 +32,15 @@ export function RoundButton({
   );
 }
 
+/**
+ * A stored name that already carries its own greeting produced "Hello, Hello,
+ * there" on screen. Strip any greeting the name arrives with, so this bar is
+ * the only thing that decides how the person is greeted.
+ */
+function bareName(value: string): string {
+  return value.replace(/^\s*(hello|hi|hey)\s*,?\s*/i, '').trim();
+}
+
 export function GreetingBar({
   name,
   onSettings,
@@ -39,14 +48,15 @@ export function GreetingBar({
   name: string;
   onSettings: () => void;
 }) {
+  const person = bareName(name) || 'there';
   return (
     <View style={styles.bar}>
       <View style={styles.greet} accessibilityRole="header">
         <View style={styles.avatar}>
           <Ionicons name="person" size={20} color={colors.onLight} />
         </View>
-        <Text variant="section">
-          Hello, <Text variant="section">{name}</Text>
+        <Text variant="section" numberOfLines={1} style={styles.greetText}>
+          Hello, {person}
         </Text>
       </View>
       <RoundButton icon="settings-outline" label="Settings" onPress={onSettings} />
@@ -60,10 +70,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingTop: spacing.sm,
+    // A long name used to push the settings button off the screen edge.
+    gap: spacing.sm,
   },
+  greetText: { flexShrink: 1 },
   greet: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexShrink: 1,
     gap: spacing.sm,
     backgroundColor: colors.glass,
     borderRadius: radius.pill,

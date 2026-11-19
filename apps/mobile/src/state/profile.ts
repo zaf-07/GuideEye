@@ -37,7 +37,9 @@ export const DEFAULT_PROFILE: Profile = {
   haptics: true,
   captions: true,
   replyFormat: 'both',
-  localOnlyMemory: true,
+  // Sync on by default: the whole point of the memory graph is that it follows
+  // the person between devices. Settings still turns it off in one tap.
+  localOnlyMemory: false,
 };
 
 export const hasVisionTrack = (p: Profile) =>

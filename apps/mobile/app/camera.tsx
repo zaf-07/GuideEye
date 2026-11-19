@@ -139,7 +139,7 @@ export default function CameraScreen() {
   // the polling capture loop when there is no consumer for those frames: the
   // previous behavior took an unused photo every 200 ms and made the preview
   // visibly flicker even though detection was unavailable.
-  const hasFrameAnalyzer = isSignMode ? hasVisionBackend : hasLocalDetector() || hasVisionBackend;
+  const hasFrameAnalyzer = isSignMode ? hasVisionBackend() : hasLocalDetector() || hasVisionBackend();
   const visionEnabled = Boolean(permission?.granted) && cameraReady && !usesBrowserHandTracking && hasFrameAnalyzer;
   const { result: vision, state: visionState, detections, cameraCoach, obstacles, blocked, performance, scanNow } = useVisionLoop(
     cameraRef,
@@ -625,7 +625,7 @@ export default function CameraScreen() {
                     ? 'VISION · ANALYZING'
                     : isSignMode
                       ? 'SIGN INTERPRETATION · LIVE'
-                      : hasVisionBackend
+                      : hasVisionBackend()
                         ? 'HYBRID VISION · LIVE'
                         : 'LOCAL YOLO · LIVE'}
             </Text>

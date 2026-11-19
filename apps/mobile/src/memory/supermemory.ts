@@ -1,4 +1,4 @@
-import { getSightDeviceId, getSightDeviceSecret, getSightSessionId } from '../sightIdentity';
+import { NoServerError, apiJson, apiUrl } from '../api';
 import { MemoryKind, RecallHit, RelationKind } from './types';
 
 /**
@@ -11,7 +11,6 @@ import { MemoryKind, RecallHit, RelationKind } from './types';
  * means one device cannot read another's memories by asking nicely.
  */
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL ?? '';
 
 export interface RemoteRememberInput {
   kind: MemoryKind;
@@ -30,42 +29,28 @@ export interface RemoteStatus {
   reason?: string;
 }
 
-function headers(): Record<string, string> {
-  return {
-    'Content-Type': 'application/json',
-    'X-Device-ID': getSightDeviceId(),
-    'X-Device-Secret': getSightDeviceSecret(),
-    'X-Session-ID': getSightSessionId(),
-  };
-}
-
 async function call<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
-  if (!API_URL) throw new Error('No API URL configured');
-  const response = await fetch(`${API_URL.replace(/\/$/, '')}${path}`, {
-    method: 'POST',
-    headers: headers(),
-    body: JSON.stringify(body),
-    signal,
-  });
-  if (!response.ok) {
-    const detail = await response.text().catch(() => '');
-    throw new Error(`Memory sync failed (${response.status}): ${detail.slice(0, 200)}`);
-  }
-  return (await response.json()) as T;
+  return apiJson<T>(path, { method: 'POST', body: JSON.stringify(body), signal });
 }
 
 export async function remoteStatus(): Promise<RemoteStatus> {
-  if (!API_URL) return { configured: false, reason: 'No backend configured' };
+  if (!apiUrl()) return { configured: false, reason: 'No GuideEye server set. Add it in Settings.' };
   try {
-    const response = await fetch(`${API_URL.replace(/\/$/, '')}/v1/recall/status`);
-    if (!response.ok) return { configured: false, reason: `Backend returned ${response.status}` };
-    return (await response.json()) as RemoteStatus;
+    return await apiJson<RemoteStatus>('/v1/recall/status');
   } catch (error) {
+    if (error instanceof NoServerError) return { configured: false, reason: error.message };
     return { configured: false, reason: (error as Error).message };
   }
 }
 
-export async function remoteRemember(input: RemoteRememberInput): Promise<{ id: string; status: string }> {
+/**
+ * The server answers with where the memory actually landed: `synced` means
+ * Supermemory acknowledged it, `local` that the server has no key, `failed`
+ * that the write was rejected. Callers surface this instead of assuming.
+ */
+export async function remoteRemember(
+  input: RemoteRememberInput,
+): Promise<{ id: string; status: string; namespace?: string | null }> {
   return call('/v1/recall/remember', input);
 }
 

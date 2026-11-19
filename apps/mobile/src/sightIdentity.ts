@@ -1,8 +1,11 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Crypto from 'expo-crypto';
 
 let memoryDeviceId = '';
 let memorySessionId = '';
 let memoryDeviceSecret = '';
+
+const SECRET_KEY = 'guideeye_sight_device_secret';
 
 function makeId(prefix: string) {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
@@ -13,17 +16,51 @@ function makeDeviceSecret() {
   return Array.from(bytes, (value) => value.toString(16).padStart(2, '0')).join('');
 }
 
-function readOrCreate(key: string, prefix: string) {
+/**
+ * Durable storage for the device secret.
+ *
+ * React Native has no `localStorage`, so the previous implementation silently
+ * minted a fresh secret on every launch. The secret is what the device ID is
+ * derived from, and the server derives the Supermemory namespace from that ID
+ * — so a phone appeared as a brand new device each time it started and its
+ * memories scattered across namespaces. AsyncStorage is the native-safe store.
+ */
+function persistSecret(secret: string) {
+  AsyncStorage.setItem(SECRET_KEY, secret).catch(() => {});
   try {
     if (typeof window !== 'undefined' && window.localStorage) {
-      const existing = window.localStorage.getItem(key);
-      if (existing) return existing;
-      const next = makeId(prefix);
-      window.localStorage.setItem(key, next);
-      return next;
+      window.localStorage.setItem(SECRET_KEY, secret);
     }
   } catch {}
-  return makeId(prefix);
+}
+
+/**
+ * Hydrate the identity from disk. Call once at startup and await it before
+ * anything talks to the server; the sync getters below would otherwise mint a
+ * new secret rather than wait.
+ */
+export async function initIdentity(): Promise<string> {
+  if (memoryDeviceSecret) return memoryDeviceSecret;
+  let stored = '';
+  try {
+    stored = (await AsyncStorage.getItem(SECRET_KEY)) ?? '';
+  } catch {
+    stored = '';
+  }
+  if (!stored) {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        stored = window.localStorage.getItem(SECRET_KEY) ?? '';
+      }
+    } catch {}
+  }
+  if (/^[a-f0-9]{64}$/.test(stored)) {
+    memoryDeviceSecret = stored;
+  } else {
+    memoryDeviceSecret = makeDeviceSecret();
+    persistSecret(memoryDeviceSecret);
+  }
+  return memoryDeviceSecret;
 }
 
 export function sha256Sync(ascii: string): string {
@@ -116,15 +153,10 @@ export function getSightSessionId() {
 
 export function getSightDeviceSecret() {
   if (!memoryDeviceSecret) {
-    memoryDeviceSecret = readOrCreate('guideeye_sight_device_secret', 'unused');
-    if (!/^[a-f0-9]{64}$/.test(memoryDeviceSecret)) {
-      memoryDeviceSecret = makeDeviceSecret();
-      try {
-        if (typeof window !== 'undefined' && window.localStorage) {
-          window.localStorage.setItem('guideeye_sight_device_secret', memoryDeviceSecret);
-        }
-      } catch {}
-    }
+    // Reached only if something asks before `initIdentity()` has resolved.
+    // Mint and persist, so this launch and every later one agree.
+    memoryDeviceSecret = makeDeviceSecret();
+    persistSecret(memoryDeviceSecret);
   }
   return memoryDeviceSecret;
 }

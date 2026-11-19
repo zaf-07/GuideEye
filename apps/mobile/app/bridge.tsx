@@ -16,6 +16,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import HandTracker, { type SignContextState } from '../components/HandTracker';
+import { HandTracker as NativeHandTracker, hasNativeHandTracking } from '../modules/guideeye-hands';
+import { useNativeHands } from '../src/useNativeHands';
 import SignPlayer from '../components/SignPlayer';
 import { translateEnglishToASLGloss } from '../src/aslGlossTranslator';
 import {
@@ -354,6 +356,24 @@ export default function DeafBlindBridgeScreen() {
     if (sign.word) handleDeafSigned(sign.word.toUpperCase());
   };
 
+  /**
+   * Hands, read on the phone itself.
+   *
+   * MediaPipe only runs in a browser, so this screen used to have no tracking
+   * at all on iOS — it posted a few stills to the server and waited. Apple's
+   * Vision framework finds the same 21 joints per hand at camera rate, which
+   * feeds the very same fingerspelling and isolated-sign classifiers.
+   */
+  const nativeHands = useNativeHands({
+    onWord: (word) => handleDeafSigned(word.toUpperCase()),
+  });
+  const nativeTracking = Platform.OS !== 'web' && hasNativeHandTracking();
+  const nativeSpelled = nativeHands.asl?.spelledText?.trim() ?? '';
+
+  useEffect(() => {
+    if (nativeTracking) setSpelled(nativeSpelled);
+  }, [nativeTracking, nativeSpelled]);
+
   const sendTypedSign = () => {
     const text = customSignMessage.trim();
     if (!text) return;
@@ -565,6 +585,15 @@ export default function DeafBlindBridgeScreen() {
             <View style={s.cameraCard}>
               {Platform.OS === 'web' ? (
                 <HandTracker onContextChange={handleContextChange} aslEngineRef={aslEngineRef} showLandmarks />
+              ) : nativeTracking && permission?.granted ? (
+                <NativeHandTracker
+                  style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+                  active
+                  facing={cameraFacing}
+                  maxHands={2}
+                  frameRate={20}
+                  onHands={nativeHands.onHands}
+                />
               ) : permission?.granted ? (
                 <CameraView ref={cameraRef} facing={cameraFacing} style={StyleSheet.absoluteFill} animateShutter={false} />
               ) : (
@@ -577,9 +606,13 @@ export default function DeafBlindBridgeScreen() {
                 <Text style={s.overlayPrompt}>
                   {Platform.OS === 'web'
                     ? 'Sign with hands in frame or pick a sign:'
-                    : !bridgeServerConfigured() || nativeSignState === 'offline'
-                      ? 'Sign decoding needs the GuideEye server. Use a quick sign or type:'
-                      : 'Reading your signed phrase… or use a quick sign:'}
+                    : nativeTracking
+                      ? nativeHands.handCount > 0
+                        ? `Reading ${nativeHands.handCount === 1 ? 'your hand' : 'both hands'} — keep signing`
+                        : 'Show your hands to start signing'
+                      : !bridgeServerConfigured() || nativeSignState === 'offline'
+                        ? 'Sign decoding needs the GuideEye server. Use a quick sign or type:'
+                        : 'Reading your signed phrase… or use a quick sign:'}
                 </Text>
                 {Platform.OS !== 'web' && (
                   <Pressable style={s.flipBtn} onPress={() => setCameraFacing((c) => (c === 'front' ? 'back' : 'front'))}>
@@ -604,7 +637,7 @@ export default function DeafBlindBridgeScreen() {
                 </Pressable>
                 <Pressable
                   style={s.spelledClear}
-                  onPress={() => { aslEngineRef.current?.clearText(); setSpelled(''); }}
+                  onPress={() => { aslEngineRef.current?.clearText(); nativeHands.reset(); setSpelled(''); }}
                   accessibilityRole="button"
                   accessibilityLabel="Clear the spelled letters"
                 >
@@ -919,12 +952,17 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    // Neither child could shrink, so the hint ran off the right edge. Let the
+    // row wrap instead: on a narrow phone the hint drops to its own line.
+    flexWrap: 'wrap',
+    gap: 8,
     marginBottom: 12,
   },
   roleTagDeaf: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    flexShrink: 1,
   },
   roleTagTextDeaf: {
     color: '#B7FF56',
@@ -980,9 +1018,19 @@ const s = StyleSheet.create({
   overlayPrompt: {
     color: '#B2C7BC',
     fontSize: 11,
+    lineHeight: 15,
+    // Without this the two-line prompt shoved the flip button past the right
+    // edge, leaving a half-drawn icon.
+    flex: 1,
+    paddingRight: 10,
   },
   flipBtn: {
-    padding: 4,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.14)',
   },
   signedCard: {
     backgroundColor: '#11221D',
@@ -1054,6 +1102,7 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    flexShrink: 1,
   },
   roleTagTextBlind: {
     color: '#FFD043',
@@ -1064,6 +1113,8 @@ const s = StyleSheet.create({
   displayHint: {
     color: '#769485',
     fontSize: 10,
+    flexShrink: 1,
+    textAlign: 'right',
   },
   giantTextCard: {
     backgroundColor: '#000000',
@@ -1077,6 +1128,8 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
     marginBottom: 6,
   },
   outputModeSwitchRow: {
@@ -1109,6 +1162,7 @@ const s = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 0.5,
     marginBottom: 6,
+    flexShrink: 1,
   },
   giantText: {
     color: '#FFD043',
