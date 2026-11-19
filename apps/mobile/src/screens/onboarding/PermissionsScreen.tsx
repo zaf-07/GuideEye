@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Alert, StyleSheet, View } from 'react-native';
+import { Alert, StyleSheet, Switch, View } from 'react-native';
 import { router } from 'expo-router';
 import { Camera } from 'expo-camera';
 import * as Location from 'expo-location';
@@ -17,7 +17,7 @@ interface Perm {
 
 /** Step 3: explain every sensor before the system prompts appear. */
 export function PermissionsScreen() {
-  const { draft } = useDraft();
+  const { draft, set } = useDraft();
   const [busy, setBusy] = useState(false);
   const perms: Perm[] = [];
 
@@ -41,7 +41,7 @@ export function PermissionsScreen() {
     try {
       const results = [await Camera.requestCameraPermissionsAsync()];
       if (hasHearingTrack(draft)) results.push(await Camera.requestMicrophonePermissionsAsync());
-      if (hasVisionTrack(draft)) results.push(await Location.requestForegroundPermissionsAsync());
+      if (hasVisionTrack(draft) || draft.nearbyDiscovery) results.push(await Location.requestForegroundPermissionsAsync());
       if (results.some((result) => result.status !== 'granted')) {
         Alert.alert('Some access was not allowed', 'GuideEye will keep working and explain how to enable each feature later.');
       }
@@ -89,6 +89,28 @@ export function PermissionsScreen() {
       </View>
 
       <GlassCard style={{ marginTop: spacing.md }}>
+        <View style={styles.row}>
+          <View style={styles.icon}>
+            <Ionicons name="people-outline" size={24} color={colors.lime} />
+          </View>
+          <View style={{ flex: 1, gap: 4 }}>
+            <Text variant="section">Nearby conversations</Text>
+            <Text variant="body" muted>
+              Off by default. When on, another GuideEye user close to you can
+              be offered a conversation while the app is open. Neither of you
+              sees who the other is until you both connect.
+            </Text>
+          </View>
+          <Switch
+            value={draft.nearbyDiscovery}
+            onValueChange={(v) => set({ nearbyDiscovery: v })}
+            trackColor={{ true: colors.lime, false: 'rgba(255,255,255,0.2)' }}
+            accessibilityLabel="Nearby conversations"
+          />
+        </View>
+      </GlassCard>
+
+      <GlassCard>
         <View style={styles.row}>
           <View style={styles.icon}>
             <Ionicons name="lock-closed-outline" size={24} color={colors.lime} />

@@ -16,8 +16,9 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .config import load_env
+from .nearby_api import router as nearby_router
 from .planner import plan
-from .services import bridge, checkout, llm, messaging, navigation, speech, vision
+from .services import bridge, checkout, llm, messaging, navigation, speech, supermemory, vision
 from .services.assistant import Assistant
 from .services.memory import Memory
 from .services.payments import CATALOGUE, Orders, is_test_key, money
@@ -37,13 +38,14 @@ async def lifespan(_: FastAPI):
     band_stop()
 
 
-app = FastAPI(title='GuideBand Local API', version='0.3.0', lifespan=lifespan)
+app = FastAPI(title='GuideEye Local API', version='0.3.0', lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[o.strip() for o in os.getenv('CORS_ORIGINS', DEFAULT_ORIGINS).split(',')],
     allow_methods=['GET', 'POST', 'DELETE'],
     allow_headers=['*'],
 )
+app.include_router(nearby_router)
 tasks: dict[str, dict] = {}
 memory = Memory()
 orders = Orders()
@@ -205,6 +207,127 @@ def memory_graph(around: str | None = None, depth: int = 2):
 def memory_clear():
     memory.clear()
     return {'status': 'cleared'}
+
+# ---------- Recall (the mobile app's memory) ----------
+# The GuideEye app keeps a local graph on the phone and mirrors it here, so one
+# person's memories follow them between their phone and the desk. The app holds
+# no Supermemory key: this server owns it, and these three routes are the only
+# way in.
+
+class RecallRemember(BaseModel):
+    kind: str = Field(default='note', max_length=32)
+    content: str = Field(min_length=1, max_length=4000)
+    id: str | None = Field(default=None, max_length=128)
+    supportingContext: str | None = Field(default=None, max_length=1500)
+    metadata: dict[str, str | int | float | bool] | None = None
+    date: str | None = None
+
+
+class RecallSearch(BaseModel):
+    query: str = Field(default='', max_length=500)
+    limit: int = Field(default=8, ge=1, le=50)
+    kinds: list[str] | None = None
+
+
+def _recall_when(date: str | None) -> float:
+    if not date:
+        return time.time()
+    try:
+        return datetime.fromisoformat(date.replace('Z', '+00:00')).timestamp()
+    except ValueError:
+        return time.time()
+
+
+@app.get('/v1/recall/status')
+def recall_status():
+    """Whether memories written here will actually reach Supermemory."""
+    status = memory.remote_status()
+    configured = bool(status.get('configured'))
+    return {
+        **status,
+        'configured': configured,
+        'reason': None if configured else 'This server has no SUPERMEMORY_API_KEY set.',
+    }
+
+
+@app.post('/v1/recall/remember')
+async def recall_remember(body: RecallRemember):
+    """Store one memory and report honestly whether it reached Supermemory.
+
+    The write is awaited rather than fired and forgotten. The app used to be
+    told nothing at all, so a note that never left the building looked exactly
+    like one that synced.
+    """
+    place = str((body.metadata or {}).get('place', '') or '')
+    text = body.content.strip()
+    if body.supportingContext:
+        text = f'{text}\n\nContext: {body.supportingContext.strip()}'
+
+    before_synced, before_errors = memory.mirrored, memory.remote_errors
+    note = memory.add_note(body.kind, text, now=_recall_when(body.date), place=place)
+    await memory.flush()
+
+    if not supermemory.configured():
+        status = 'local'
+    elif memory.mirrored > before_synced:
+        status = 'synced'
+    elif memory.remote_errors > before_errors:
+        status = 'failed'
+    else:
+        status = 'skipped'
+
+    return {
+        'id': body.id or str(note['id']),
+        'noteId': note['id'],
+        'status': status,
+        'relations': note.get('relations', []),
+        'namespace': supermemory.namespace() if supermemory.configured() else None,
+    }
+
+
+@app.post('/v1/recall/search')
+async def recall_search(body: RecallSearch):
+    """Search Supermemory, with the local relationship graph layered on top."""
+    question = body.query.strip()
+    results: list[dict] = []
+    if not question:
+        return {'results': results}
+
+    hits: list[dict] = []
+    if supermemory.configured():
+        try:
+            hits = await supermemory.recall(question, limit=body.limit)
+        except supermemory.SupermemoryError as error:
+            raise HTTPException(502, f'Supermemory search failed: {error}') from error
+
+    # Local edges let a hit carry its connections, which is what makes this a
+    # graph answer rather than a list of sentences.
+    edges = memory.graph_snapshot(limit=240)['edges']
+
+    for hit in hits:
+        if body.kinds and hit.get('kind') not in body.kinds:
+            continue
+        lowered = hit['text'].lower()
+        related = [
+            {
+                'id': f"{edge['subject']}|{edge['relation']}|{edge['object']}",
+                'text': f"{edge['subject']} {edge['relation'].replace('_', ' ')} {edge['object']}",
+                'relation': edge['relation'],
+            }
+            for edge in edges
+            if edge['subject'] in lowered or edge['object'] in lowered
+        ][:6]
+        results.append({
+            'id': str(hit.get('id') or ''),
+            'text': hit['text'],
+            'similarity': float(hit.get('score') or 0.0),
+            'kind': hit.get('kind') or 'note',
+            'updatedAt': hit.get('when'),
+            'related': related,
+        })
+
+    return {'results': results}
+
 
 # ---------- Location and directions ----------
 

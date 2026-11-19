@@ -11,8 +11,32 @@ const identity = loadTs('src/sightIdentity.ts', {
   'expo-crypto': mockCrypto,
 });
 
+
+const asyncStorageStub = {
+  default: {
+    getItem: () => Promise.resolve(null),
+    setItem: () => Promise.resolve(),
+    removeItem: () => Promise.resolve(),
+  },
+};
+const constantsStub = { default: { expoConfig: {}, expoGoConfig: {} } };
+
+const api = loadTs('src/api.ts', {
+  '@react-native-async-storage/async-storage': asyncStorageStub,
+  'expo-constants': constantsStub,
+  './sightIdentity': { getSightHeaders: () => ({}) },
+});
+
+/** The address resolver, stubbed so vision.ts can be loaded on its own. */
+const apiStub = {
+  apiUrl: () => '',
+  isAllowedEndpoint: api.isAllowedEndpoint,
+  NoServerError: class NoServerError extends Error {},
+};
+
 const vision = loadTs('src/vision.ts', {
   'expo-crypto': mockCrypto,
+  './api': apiStub,
   './detector': {
     detectObjects: () => Promise.resolve([]),
     detectVideoFrame: () => Promise.resolve(null),
@@ -53,20 +77,39 @@ test('tampering with secret suffix alters the derived device ID completely', () 
   assert.notStrictEqual(originalId, tamperedId);
 });
 
-test('isSecureEndpoint enforces transport security', () => {
-  // Loopback HTTP allowed for local developer debugging
+test('transport security: https anywhere, cleartext only on the local network', () => {
+  // Loopback, for a server running on this machine.
   assert.strictEqual(vision.isSecureEndpoint('http://localhost:8000'), true);
   assert.strictEqual(vision.isSecureEndpoint('http://127.0.0.1:8000'), true);
 
-  // HTTPS allowed for all endpoints
+  // HTTPS is allowed to any host.
   assert.strictEqual(vision.isSecureEndpoint('https://api.guideeye.org'), true);
   assert.strictEqual(vision.isSecureEndpoint('https://dgx-spark.local:8000'), true);
 
-  // Cleartext HTTP rejected for remote / LAN endpoints
-  assert.strictEqual(vision.isSecureEndpoint('http://dgx-spark.local:8000'), false);
-  assert.strictEqual(vision.isSecureEndpoint('http://192.168.1.50:8000'), false);
+  // Cleartext to the local network is allowed deliberately: a phone cannot
+  // reach the laptop serving it over https without a tunnel and a
+  // certificate, and refusing it outright left the app unable to talk to a
+  // development server at all.
+  assert.strictEqual(vision.isSecureEndpoint('http://192.168.1.50:8000'), true);
+  assert.strictEqual(vision.isSecureEndpoint('http://10.0.0.4:8000'), true);
+  assert.strictEqual(vision.isSecureEndpoint('http://172.16.5.9:8000'), true);
+  assert.strictEqual(vision.isSecureEndpoint('http://dgx-spark.local:8000'), true);
+
+  // Everything that leaves the local network must still be encrypted.
   assert.strictEqual(vision.isSecureEndpoint('http://campus-vision.internal'), false);
+  assert.strictEqual(vision.isSecureEndpoint('http://203.0.113.10:8000'), false);
+  assert.strictEqual(vision.isSecureEndpoint('http://172.32.0.1:8000'), false);
   assert.strictEqual(vision.isSecureEndpoint('ftp://localhost'), false);
+});
+
+test('normalizeApiUrl refuses to hand back an address it would not allow', () => {
+  assert.strictEqual(api.normalizeApiUrl('http://example.com:8000'), '');
+  assert.strictEqual(api.normalizeApiUrl('not a url'), '');
+  assert.strictEqual(api.normalizeApiUrl(''), '');
+  // A bare host is what people actually type; it gets the API port.
+  assert.strictEqual(api.normalizeApiUrl('192.168.1.5'), 'http://192.168.1.5:8000');
+  // Metro's port is a standing trap: it is the address the phone already has.
+  assert.strictEqual(api.normalizeApiUrl('http://192.168.1.5:8081'), 'http://192.168.1.5:8000');
 });
 
 test('native globals do not trigger browser hostname access', () => {
@@ -77,6 +120,7 @@ test('native globals do not trigger browser hostname access', () => {
     global.window = {};
     delete global.document;
     const nativeVision = loadTs('src/vision.ts', {
+      './api': apiStub,
       './detector': {
         detectObjects: () => Promise.resolve([]),
         detectVideoFrame: () => Promise.resolve(null),
@@ -87,7 +131,7 @@ test('native globals do not trigger browser hostname access', () => {
       './blockedView': {},
     });
     assert.strictEqual(nativeVision.getApiUrl(), '');
-    assert.strictEqual(nativeVision.hasVisionBackend, false);
+    assert.strictEqual(nativeVision.hasVisionBackend(), false);
   } finally {
     if (previousWindow === undefined) delete global.window;
     else global.window = previousWindow;
@@ -104,10 +148,13 @@ test('tflite startup notice suppression intercepts console.error and LogBox noti
   try {
     console.error = capture;
     loadTs('app/_layout.tsx', {
+      '../src/api': { loadApiUrl: () => Promise.resolve('') },
+      '../src/sightIdentity': { initIdentity: () => Promise.resolve('') },
       'expo-router': { Stack: () => null },
       'expo-status-bar': { StatusBar: () => null },
       'react-native': { LogBox: { ignoreLogs: () => {} } },
       'react-native-safe-area-context': { SafeAreaProvider: () => null },
+      '../components/NearbyPrompt': { NearbyPrompt: () => null },
       '../src/state/ProfileContext': { ProfileProvider: () => null },
       '../src/theme/tokens': { colors: { canvasDeep: '#07110F' } },
     });

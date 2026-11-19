@@ -1,7 +1,11 @@
+import { useEffect } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { LogBox } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { NearbyPrompt } from '../components/NearbyPrompt';
+import { loadApiUrl } from '../src/api';
+import { initIdentity } from '../src/sightIdentity';
 import { ProfileProvider } from '../src/state/ProfileContext';
 import { colors } from '../src/theme/tokens';
 
@@ -44,6 +48,16 @@ console.info = suppressTfliteStartupNotice(console.info);
 console.log = suppressTfliteStartupNotice(console.log);
 
 export default function RootLayout() {
+  useEffect(() => {
+    // Identity first: the device secret is what the server derives this
+    // phone's Supermemory namespace from, and minting it lazily meant a new
+    // namespace on every launch. Then resolve the server address once, so
+    // every feature asks the same question and gets the same answer.
+    initIdentity()
+      .then(() => loadApiUrl())
+      .catch(() => {});
+  }, []);
+
   return (
     <SafeAreaProvider>
       <ProfileProvider>
@@ -55,6 +69,7 @@ export default function RootLayout() {
             animation: 'slide_from_right',
           }}
         />
+        <NearbyPrompt />
       </ProfileProvider>
     </SafeAreaProvider>
   );

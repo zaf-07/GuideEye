@@ -18,7 +18,7 @@ Two things worth knowing before you read the output:
     see the real latency on your account.
 
   * It writes to its own container tag, not your real one, so nothing here can
-    pollute or erase what GuideBand has remembered. Pass --cleanup to delete
+    pollute or erase what GuideEye has remembered. Pass --cleanup to delete
     the test documents afterwards.
 
 Standard library only, so it runs on the Python already on this machine. The
@@ -106,7 +106,7 @@ def wait_until_indexed(doc_id: str) -> bool:
 
     Two clocks matter. `status` is the chunk/embed pipeline. `dreamingStatus` is
     memory and relationship generation, and it finishes later — sometimes
-    minutes later. GuideBand reads memories, so this waits for both; stopping at
+    minutes later. GuideEye reads memories, so this waits for both; stopping at
     status == done is exactly why a search can come back empty and look broken.
     """
     started, seen, delay = time.time(), None, 1.0

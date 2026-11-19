@@ -26,7 +26,7 @@ module.exports = {
           'GuideEye uses motion sensors to know which way you are facing while navigating.',
         NSLocalNetworkUsageDescription:
           'GuideEye uses the local network to create a private nearby conversation with another GuideEye device.',
-        NSBonjourServices: ['_guideeye._tcp'],
+        NSBonjourServices: ['_guideeye._tcp', '_guideeye._udp'],
       },
     },
     android: {

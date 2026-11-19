@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""GuideBand hardware bridge for the team's Vexo Open band #20.
+"""GuideEye hardware bridge for the team's Vexo Open band #20.
 
 Uses the official vexo-open-kit unchanged. Every real connection is restricted to
 Vexo-HACK-20 by the kit and is verified again before any command is sent.

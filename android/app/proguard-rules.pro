@@ -1,1 +1,1 @@
-# GuideBand currently keeps release symbols for hackathon diagnostics.
+# GuideEye currently keeps release symbols for hackathon diagnostics.

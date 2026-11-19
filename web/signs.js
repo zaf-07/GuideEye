@@ -1,4 +1,4 @@
-// GuideBand sign reading, fully on-device.
+// GuideEye sign reading, fully on-device.
 // MediaPipe finds 21 hand landmarks per frame; a small linear model (trained for
 // GuideLens) classifies ASL fingerspelling letters from them, and a few simple
 // finger-shape rules recognise whole-hand signs. Nothing leaves the browser.

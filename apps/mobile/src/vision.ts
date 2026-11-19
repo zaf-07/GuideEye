@@ -1,3 +1,4 @@
+import { NoServerError, apiUrl, isAllowedEndpoint } from './api';
 import type { CameraView } from 'expo-camera';
 import { RefObject, useCallback, useEffect, useRef, useState } from 'react';
 import { detectObjects, detectVideoFrame, localDetectorBackend, warmUpDetector } from './detector';
@@ -142,80 +143,29 @@ const nextAnimationFrame = () => new Promise<void>((resolve) => {
   if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => resolve());
   else setTimeout(resolve, 16);
 });
-const LOCAL_API_PORT = '8000';
 
-function isLoopbackHost(hostname: string): boolean {
-  return ['localhost', '127.0.0.1', '::1', '[::1]'].includes(hostname);
-}
-
+/**
+ * Address resolution lives in `src/api.ts` now. It used to be duplicated here
+ * and keyed off `localStorage`, which React Native does not have, so on a
+ * phone every one of these helpers resolved to the empty string and the whole
+ * vision stack ran "offline" without ever saying why.
+ */
 export function isSecureEndpoint(urlStr: string): boolean {
-  try {
-    const parsed = new URL(urlStr);
-    if (parsed.protocol === 'https:') return true;
-    if (parsed.protocol === 'http:' && isLoopbackHost(parsed.hostname)) return true;
-    return false;
-  } catch {
-    return false;
-  }
-}
-
-function normalizeApiUrl(value: string): string {
-  const trimmed = value.trim().replace(/\/$/, '');
-  try {
-    const parsed = new URL(trimmed);
-    // 8082 is Expo Web in this project; FastAPI listens on 8000.
-    if (isLoopbackHost(parsed.hostname) && parsed.port === '8082') {
-      parsed.port = LOCAL_API_PORT;
-      return parsed.toString().replace(/\/$/, '');
-    }
-    // Enforce transport security: remote endpoints must use https
-    if (parsed.protocol === 'http:' && !isLoopbackHost(parsed.hostname)) {
-      return '';
-    }
-  } catch {
-    // Preserve validation behavior for malformed custom values.
-  }
-  return trimmed;
+  return isAllowedEndpoint(urlStr);
 }
 
 export function getApiUrl(): string {
-  if (typeof window !== 'undefined' && window.localStorage) {
-    const custom = window.localStorage.getItem('guideeye_api_url');
-    if (custom && custom.trim()) {
-      const normalized = normalizeApiUrl(custom);
-      if (normalized !== custom.trim().replace(/\/$/, '')) window.localStorage.setItem('guideeye_api_url', normalized);
-      return normalized;
-    }
-  }
-  const configured = process.env.EXPO_PUBLIC_API_URL ? normalizeApiUrl(process.env.EXPO_PUBLIC_API_URL) : '';
-  if (configured) return configured;
-  if (browserHostnameIsLoopback()) {
-    return 'http://localhost:8000';
-  }
-  return '';
+  return apiUrl();
 }
 
-// React Native exposes `window` as an alias for the global object, but it does
-// not provide the browser Location API. Checking only for `window` therefore
-// crashes the native camera route while this module is being evaluated.
-// `document` is browser-only and is a reliable boundary for this web fallback.
-function browserHostnameIsLoopback(): boolean {
-  if (typeof document === 'undefined') return false;
-  const hostname = document.location?.hostname ?? '';
-  return ['localhost', '127.0.0.1'].includes(hostname);
+/** Whether a server is reachable for the cloud-only features (sign reading). */
+export function hasVisionBackend(): boolean {
+  return Boolean(apiUrl());
 }
-
-const configuredApiUrl = process.env.EXPO_PUBLIC_API_URL ? normalizeApiUrl(process.env.EXPO_PUBLIC_API_URL) : '';
-const API_URL = configuredApiUrl || (
-  browserHostnameIsLoopback()
-    ? 'http://localhost:8000'
-    : ''
-);
-export const hasVisionBackend = Boolean(API_URL);
 
 function requireApiUrl() {
   const url = getApiUrl();
-  if (!url) throw new Error('EXPO_PUBLIC_API_URL is not configured. Configure it in Settings or set EXPO_PUBLIC_API_URL.');
+  if (!url) throw new NoServerError();
   return url;
 }
 

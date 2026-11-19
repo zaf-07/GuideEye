@@ -1,13 +1,12 @@
 import { Redirect } from 'expo-router';
 import { ActivityIndicator, View } from 'react-native';
-import { HomeScreen } from '../src/screens/home/HomeScreen';
 import { useProfile } from '../src/state/ProfileContext';
 import { colors } from '../src/theme/tokens';
 
 /**
  * The gate. There is no account wall: first launch opens onboarding, then the
- * tailored app. Because the home screen reads the profile, finishing or
- * re-running onboarding rebuilds this surface around the new answers.
+ * tabbed app. Because the home surface reads the profile, finishing or
+ * re-running onboarding rebuilds it around the new answers.
  */
 export default function Index() {
   const { ready, onboarded } = useProfile();
@@ -22,5 +21,5 @@ export default function Index() {
 
   if (!onboarded) return <Redirect href="/onboarding/welcome" />;
 
-  return <HomeScreen />;
+  return <Redirect href="/main" />;
 }

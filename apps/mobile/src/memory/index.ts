@@ -18,6 +18,47 @@ export { nodeId, neighbours, stats } from './graph';
 
 const syncEnabled = (profile: Profile) => !profile.localOnlyMemory;
 
+/**
+ * What happened to the last memory that tried to leave this phone.
+ *
+ * Sync failures are still swallowed at the call site — a memory that did not
+ * reach the server is not a reason to interrupt someone crossing a road — but
+ * swallowing them *silently* is how "nothing is syncing" went unnoticed. The
+ * result is recorded here so Settings and the Memory screen can say so.
+ */
+export interface SyncHealth {
+  state: 'idle' | 'off' | 'synced' | 'local' | 'failed';
+  detail: string;
+  at: number;
+  /** Memories accepted by Supermemory since the app started. */
+  synced: number;
+  /** Memories that tried and failed since the app started. */
+  failed: number;
+}
+
+let health: SyncHealth = { state: 'idle', detail: 'Nothing written yet.', at: 0, synced: 0, failed: 0 };
+const watchers = new Set<(value: SyncHealth) => void>();
+
+function setHealth(next: Partial<SyncHealth>) {
+  health = { ...health, ...next, at: Date.now() };
+  for (const watcher of watchers) {
+    try {
+      watcher(health);
+    } catch {
+      /* a bad subscriber must not break remembering */
+    }
+  }
+}
+
+export function syncHealth(): SyncHealth {
+  return health;
+}
+
+export function onSyncHealth(watcher: (value: SyncHealth) => void): () => void {
+  watchers.add(watcher);
+  return () => watchers.delete(watcher);
+}
+
 function describeEpisode(episode: Episode): string {
   if (episode.summary) return episode.summary;
   const labels = episode.entities.map((e) => e.label).filter(Boolean);
@@ -36,7 +77,9 @@ export async function remember(profile: Profile, episode: Episode): Promise<Memo
   const next = observe(graph, episode);
   saveGraph(next);
 
-  if (syncEnabled(profile)) {
+  if (!syncEnabled(profile)) {
+    setHealth({ state: 'off', detail: 'Memory is set to stay on this device.' });
+  } else {
     const content = describeEpisode(episode);
     const kind: MemoryKind = episode.entities[0]?.kind ?? 'object';
     remoteRemember({
@@ -51,7 +94,19 @@ export async function remember(profile: Profile, episode: Episode): Promise<Memo
         ...(episode.speaker ? { speaker: episode.speaker } : {}),
       },
       date: new Date(episode.at ?? Date.now()).toISOString(),
-    }).catch(() => {});
+    })
+      .then((result) => {
+        if (result.status === 'synced') {
+          setHealth({ state: 'synced', detail: 'Synced to Supermemory.', synced: health.synced + 1 });
+        } else if (result.status === 'local') {
+          setHealth({ state: 'local', detail: 'Saved on the server, but it has no Supermemory key.' });
+        } else {
+          setHealth({ state: 'failed', detail: `Supermemory rejected it (${result.status}).`, failed: health.failed + 1 });
+        }
+      })
+      .catch((error: Error) => {
+        setHealth({ state: 'failed', detail: error.message, failed: health.failed + 1 });
+      });
   }
 
   return next;

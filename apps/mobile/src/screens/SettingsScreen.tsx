@@ -1,8 +1,11 @@
-import React from 'react';
-import { Alert, StyleSheet, Switch, View } from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, StyleSheet, Switch, TextInput, View } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import * as Location from 'expo-location';
 import { Button, Chip, Display, GlassCard, RoundButton, Screen, Text } from '../components';
+import { apiJson, apiUrl, devHostApiUrl, loadApiUrl, probeApi, setApiUrl } from '../api';
+import { onSyncHealth, remoteStatus, syncHealth, type SyncHealth } from '../memory';
 import { useProfile } from '../state/ProfileContext';
 import { hasHearingTrack, hasVisionTrack, IMPAIRMENT_LABEL } from '../state/profile';
 import { colors, spacing } from '../theme/tokens';
@@ -36,6 +39,147 @@ function Row({
   );
 }
 
+
+/**
+ * Where the GuideEye server is, and whether memories are reaching it.
+ *
+ * There was no way to set this on a phone at all: the address came from a
+ * build-time variable, and the one code path that read a user value used
+ * `localStorage`, which React Native does not have. So the app shipped with
+ * every server-backed feature permanently dark and no way to say so.
+ */
+function ServerCard() {
+  const [draft, setDraft] = useState('');
+  const [checking, setChecking] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; detail: string } | null>(null);
+  const [sync, setSync] = useState<string>('');
+  const [health, setHealth] = useState<SyncHealth>(syncHealth);
+
+  useEffect(() => onSyncHealth(setHealth), []);
+
+  useEffect(() => {
+    loadApiUrl().then((url) => setDraft(url)).catch(() => {});
+  }, []);
+
+  const check = useCallback(async () => {
+    setChecking(true);
+    setResult(null);
+    try {
+      const probe = await probeApi(draft);
+      setResult({ ok: probe.ok, detail: probe.ok ? `Connected in ${probe.latencyMs} ms.` : probe.detail });
+      if (probe.ok) {
+        await setApiUrl(probe.url);
+        setDraft(probe.url);
+        const status = await remoteStatus();
+        setSync(
+          status.configured
+            ? 'Supermemory is on. New memories sync as they are made.'
+            : `Memories stay on the server only: ${status.reason ?? 'Supermemory is not set up there.'}`,
+        );
+      }
+    } finally {
+      setChecking(false);
+    }
+  }, [draft]);
+
+  const syncNow = useCallback(async () => {
+    setSync('Syncing everything…');
+    try {
+      const body = await apiJson<{ sent: number; failed: number; skipped: number }>('/memory/sync', { method: 'POST' });
+      setSync(`Sent ${body.sent}, failed ${body.failed}, skipped ${body.skipped}.`);
+    } catch (error) {
+      setSync((error as Error).message);
+    }
+  }, []);
+
+  const suggestion = devHostApiUrl();
+
+  return (
+    <GlassCard>
+      <Text variant="caption" faint>GUIDEEYE SERVER</Text>
+      <Text variant="section">Where this phone looks for GuideEye</Text>
+      <Text variant="body" muted>
+        Scene descriptions, sign reading and synced memory all come from here. Plain http is
+        allowed to an address on your own network; anything further away must use https.
+      </Text>
+
+      <TextInput
+        value={draft}
+        onChangeText={setDraft}
+        placeholder={suggestion || 'http://192.168.1.5:8000'}
+        placeholderTextColor={colors.textFaint}
+        autoCapitalize="none"
+        autoCorrect={false}
+        keyboardType="url"
+        accessibilityLabel="GuideEye server address"
+        style={styles.input}
+      />
+
+      {suggestion && suggestion !== draft ? (
+        <Button
+          label={`Use this Mac (${suggestion.replace(/^https?:\/\//, '')})`}
+          tone="glass"
+          onPress={() => setDraft(suggestion)}
+          hint="Fills in the computer that is serving the app right now."
+          style={{ marginTop: spacing.sm }}
+          icon={<Ionicons name="laptop-outline" size={20} color={colors.text} />}
+        />
+      ) : null}
+
+      <Button
+        label={checking ? 'Checking…' : 'Test and save'}
+        onPress={check}
+        hint="Asks the address whether a GuideEye server is answering, then saves it."
+        style={{ marginTop: spacing.sm }}
+        icon={
+          checking ? (
+            <ActivityIndicator color={colors.onLight} />
+          ) : (
+            <Ionicons name="wifi-outline" size={20} color={colors.onLight} />
+          )
+        }
+      />
+
+      {result ? (
+        <Text
+          variant="body"
+          style={{ marginTop: spacing.sm, color: result.ok ? colors.lime : colors.amber }}
+          accessibilityLiveRegion="polite"
+        >
+          {result.detail}
+        </Text>
+      ) : null}
+
+      <Button
+        label="Sync all memories now"
+        tone="glass"
+        onPress={syncNow}
+        hint="Pushes everything already stored to Supermemory, including notes made before it was set up."
+        style={{ marginTop: spacing.sm }}
+        icon={<Ionicons name="cloud-upload-outline" size={20} color={colors.text} />}
+      />
+
+      {sync ? (
+        <Text variant="caption" muted style={{ marginTop: spacing.sm }} accessibilityLiveRegion="polite">
+          {sync}
+        </Text>
+      ) : null}
+
+      <Text variant="caption" faint style={{ marginTop: spacing.sm }}>
+        {apiUrl() ? `Currently using ${apiUrl()}` : 'No server set — on-device features still work.'}
+      </Text>
+
+      <Text
+        variant="caption"
+        style={{ marginTop: 4, color: health.state === 'failed' ? colors.amber : colors.textFaint }}
+      >
+        {`Last memory: ${health.detail}`}
+        {health.synced || health.failed ? ` (${health.synced} synced, ${health.failed} failed this session)` : ''}
+      </Text>
+    </GlassCard>
+  );
+}
+
 export function SettingsScreen() {
   const { profile, patch, restartOnboarding } = useProfile();
   const vision = hasVisionTrack(profile);
@@ -52,7 +196,7 @@ export function SettingsScreen() {
     );
 
   return (
-    <Screen>
+    <Screen underTabBar>
       <View style={styles.bar}>
         <RoundButton icon="chevron-back" label="Back" onPress={() => router.back()} />
       </View>
@@ -80,6 +224,8 @@ export function SettingsScreen() {
           icon={<Ionicons name="repeat-outline" size={20} color={colors.text} />}
         />
       </GlassCard>
+
+      <ServerCard />
 
       {vision ? (
         <GlassCard>
@@ -138,8 +284,20 @@ export function SettingsScreen() {
 
       <GlassCard>
         <Row
+          title="Find nearby GuideEye users"
+          caption="While the app is open, another GuideEye user close to you can be offered a conversation. Neither of you sees who the other is until you both connect. Your location is used only to check distance and is not stored."
+          value={profile.nearbyDiscovery}
+          onChange={(v) => {
+            void patch({ nearbyDiscovery: v });
+            if (v) Location.requestForegroundPermissionsAsync().catch(() => {});
+          }}
+        />
+      </GlassCard>
+
+      <GlassCard>
+        <Row
           title="Keep memory on this device"
-          caption="On, nothing leaves your phone. Off, your memory graph syncs through Supermemory so recall follows you across devices."
+          caption="On, nothing leaves your phone. Off (the default), every new memory syncs through Supermemory so recall follows you across devices."
           value={profile.localOnlyMemory}
           onChange={(v) => patch({ localOnlyMemory: v })}
         />
@@ -161,4 +319,15 @@ const styles = StyleSheet.create({
   bar: { flexDirection: 'row', paddingTop: spacing.sm, paddingBottom: spacing.md },
   row: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.sm },
+  input: {
+    marginTop: spacing.sm,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
+    borderRadius: 12,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 12,
+    color: colors.text,
+    fontSize: 16,
+  },
 });

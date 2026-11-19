@@ -1,4 +1,4 @@
-// GuideBand Modern Desktop Application Controller
+// GuideEye Modern Desktop Application Controller
 (() => {
   const $ = s => document.querySelector(s);
   const stored = (() => { try { return localStorage.getItem('guideband_api'); } catch { return null; } })();
@@ -184,7 +184,7 @@
         replyEl.textContent = error.detail || 'Check that the band is powered on and double-tapped.';
       }
     } catch (err) {
-      heardEl.textContent = 'Connection error with GuideBand backend.';
+      heardEl.textContent = 'Connection error with GuideEye backend.';
       replyEl.textContent = String(err);
     } finally {
       isListeningBand = false;

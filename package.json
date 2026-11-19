@@ -6,9 +6,9 @@
   "workspaces": [
     "apps/mobile"
   ],
-  "desktopName": "GuideBand",
+  "desktopName": "GuideEye",
   "author": {
-    "name": "GuideBand Team",
+    "name": "GuideEye Team",
     "email": "78542749+k1lst1x@users.noreply.github.com"
   },
   "main": "desktop/main.cjs",
@@ -30,7 +30,7 @@
   },
   "build": {
     "appId": "ai.guideband.desktop",
-    "productName": "GuideBand",
+    "productName": "GuideEye",
     "directories": { "output": "release" },
     "files": ["desktop/**/*", "web/**/*", "build/**/*", "package.json"],
     "mac": { "target": ["dmg", "zip"], "category": "public.app-category.lifestyle", "icon": "build/icon.icns" },
@@ -38,7 +38,7 @@
     "linux": {
       "target": ["AppImage", "deb"],
       "category": "Utility",
-      "maintainer": "GuideBand Team <78542749+k1lst1x@users.noreply.github.com>",
+      "maintainer": "GuideEye Team <78542749+k1lst1x@users.noreply.github.com>",
       "executableName": "guideband",
       "syncDesktopName": true
     }
