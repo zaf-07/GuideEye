@@ -11,7 +11,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter+Tight:wght@400;500;600&display=swap">
   <link rel="stylesheet" href="landing.css?v=5">
-  <link rel="stylesheet" href="live.css?v=23">
+  <link rel="stylesheet" href="live.css?v=25">
   <title>GuideBand — The AI that sees, remembers and acts for you</title>
 </head>
 <body>
@@ -209,9 +209,37 @@
               <p class="stage-warning" id="liveWarning" aria-live="assertive"></p>
             </div>
             <p class="nav-status" id="navStatus" role="status"></p>
-            <section class="route-map" id="routeMap" hidden aria-label="Live walking route">
-              <div class="route-map-head"><strong>Live walking route</strong><button class="link-inline" id="routeMapClose" type="button">Hide map</button></div>
-              <iframe id="routeMapFrame" title="Google Maps walking directions" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
+            <section class="route-map" id="routeMap" hidden aria-label="Walking directions">
+              <div class="route-turn" id="routeTurn">
+                <div class="route-arrow" id="routeArrow" data-turn="straight" aria-hidden="true">
+                  <svg class="arrow-go" viewBox="0 0 24 24"><path d="M12 2.5 20.5 11.5h-5.3V21.5H8.8V11.5H3.5z"/></svg>
+                  <svg class="arrow-arrive" viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7zm0 9.6a2.6 2.6 0 1 1 0-5.2 2.6 2.6 0 0 1 0 5.2z"/></svg>
+                </div>
+                <div class="route-turn-text">
+                  <p class="route-distance" id="routeDistance"></p>
+                  <p class="route-say" id="routeSay"></p>
+                  <p class="route-relative" id="routeRelative"></p>
+                </div>
+                <button class="btn btn-primary btn-small" id="routeAsk" type="button">Which way?</button>
+              </div>
+              <div class="route-progress">
+                <div class="route-progress-text"><strong id="routeDest"></strong><span id="routeRemaining"></span></div>
+                <div class="route-bar" aria-hidden="true"><i id="routeBar"></i></div>
+              </div>
+              <div class="route-view" id="routeView">
+                <div class="route-canvas" id="routeCanvas" hidden></div>
+                <iframe id="routeMapFrame" hidden title="Google Maps walking directions" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
+              </div>
+              <details class="route-steps-box"><summary>All steps</summary><ol class="route-steps" id="routeSteps"></ol></details>
+              <div class="route-actions">
+                <button class="btn btn-glass glass btn-small" id="routeRecenter" type="button">Find me</button>
+                <button class="btn btn-glass glass btn-small" id="routeOverview" type="button">Whole route</button>
+                <button class="btn btn-glass glass btn-small" id="routeRotate" type="button">North up</button>
+                <button class="btn btn-glass glass btn-small" id="routeBig" type="button">Larger text</button>
+                <button class="btn btn-glass glass btn-small" id="routeMapClose" type="button">Hide map</button>
+                <button class="btn btn-glass glass btn-small route-stop" id="routeStop" type="button">Stop directions</button>
+              </div>
+              <p class="route-hint" id="routeHint" hidden>Vibration: one long buzz means left, two mean right, three mean turn around. A turn you have reached repeats its buzz.</p>
             </section>
             <div class="live-controls">
               <div class="row wrap">
@@ -498,6 +526,6 @@
 
   <script src="landing.js?v=4"></script>
   <script src="signs.js?v=16"></script>
-  <script src="live.js?v=35"></script>
+  <script src="live.js?v=37"></script>
 </body>
 </html>

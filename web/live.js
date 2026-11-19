@@ -111,7 +111,6 @@
     el('apiInput').value = location.origin;
     checkService();
   };
-  el('routeMapClose').onclick = () => { mapDestination = null; el('routeMap').hidden = true; el('routeMapFrame').src = 'about:blank'; };
 
   function mapDistance(a, b) {
     if (!a || !b) return Infinity;
@@ -124,19 +123,229 @@
     if (!force && Date.now() - mapLastRendered < 15000 && mapDistance(position, mapOrigin) < 20) return;
     const params = new URLSearchParams({ key: mapsEmbedKey, origin: `${position.lat},${position.lon}`, destination: `${mapDestination.lat},${mapDestination.lon}`, mode: 'walking' });
     el('routeMapFrame').src = 'https://www.google.com/maps/embed/v1/directions?' + params;
-    el('routeMap').hidden = false;
     mapOrigin = { ...position }; mapLastRendered = Date.now();
   }
-  function showRouteMap(mapUrl) {
+
+  const guide = { route: null, nav: null, map: null, line: null, walked: null, me: null, turnMark: null, destMark: null, follow: false, mode: '', loading: null, hideTimer: 0,
+    headingUp: store.get('guideband_heading_up') !== 'no', big: store.get('guideband_route_big') === 'yes' };
+  const firstSentence = text => (text || '').split('. ')[0].replace(/\.$/, '');
+  const darkPage = () => matchMedia('(prefers-color-scheme: dark)').matches;
+  let compassHeading = null, compassSent = null, compassOn = false, compassDrawn = 0;
+  const currentHeading = () => compassHeading ?? guide.nav?.heading ?? null;
+  const turned = (a, b) => Math.abs(((a - b + 540) % 360) - 180);
+  const TURN_BUZZ = { left: [400], 'slight-left': [400], right: [400, 150, 400], 'slight-right': [400, 150, 400], uturn: [400, 150, 400, 150, 400], straight: [80], arrive: [120, 80, 120, 80, 600] };
+  function turnBuzz(nav) {
+    if (nav.kind === 'arrive') return buzz(TURN_BUZZ.arrive);
+    if (nav.kind === 'reroute' || nav.kind === 'off_route') return buzz([80, 60, 80, 60, 80, 60, 80]);
+    const pattern = TURN_BUZZ[nav.say_turn] || [200, 100, 200];
+    buzz(nav.kind === 'turn' ? [...pattern, 350, ...pattern] : pattern);
+  }
+  function onCompass(event) {
+    let heading = null;
+    if (typeof event.webkitCompassHeading === 'number') heading = event.webkitCompassHeading;
+    else if (event.absolute && typeof event.alpha === 'number') heading = (360 - event.alpha) % 360;
+    if (heading === null || Number.isNaN(heading)) return;
+    compassHeading = heading;
+    if (!guide.route) return;
+    if (Date.now() - compassDrawn > 250) { compassDrawn = Date.now(); placeMe(); }
+    if (compassSent === null || turned(heading, compassSent) > 25) reportLocation();
+  }
+  function startCompass() {
+    if (compassOn || typeof DeviceOrientationEvent === 'undefined') return;
+    const listen = () => { compassOn = true; addEventListener('deviceorientationabsolute', onCompass); addEventListener('deviceorientation', onCompass); };
     try {
-      const route = new URL(mapUrl);
-      const destination = route.searchParams.get('destination');
-      if (!destination) return;
-      const [lat, lon] = destination.split(',').map(Number);
-      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
-      mapDestination = { lat, lon }; renderRouteMap(true);
+      if (typeof DeviceOrientationEvent.requestPermission === 'function') DeviceOrientationEvent.requestPermission().then(state => { if (state === 'granted') listen(); }).catch(() => {});
+      else listen();
     } catch {}
   }
+  function applyGuideLook() {
+    el('routeMap').classList.toggle('big', guide.big);
+    el('routeBig').textContent = guide.big ? 'Normal text' : 'Larger text';
+    el('routeRotate').textContent = guide.headingUp ? 'North up' : 'Heading up';
+    if (guide.mode !== 'google' || !guide.line) return;
+    const accent = guide.big ? '#ffe600' : (getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#0a6a45');
+    guide.line.setOptions({ strokeColor: accent, strokeWeight: guide.big ? 11 : 7 });
+    guide.walked.setOptions({ strokeWeight: guide.big ? 9 : 6 });
+  }
+  function splitRoute() {
+    if (guide.mode !== 'google' || !guide.line || !guide.route) return;
+    const path = guide.route.path, point = ([lat, lng]) => ({ lat, lng });
+    if (!position || path.length < 2) { guide.line.setPath(path.map(point)); guide.walked.setPath([]); return; }
+    const scale = Math.cos(position.lat * Math.PI / 180);
+    let best = Infinity, at = 0, nearest = path[0];
+    for (let i = 0; i < path.length - 1; i++) {
+      const ax = (path[i][1] - position.lon) * scale, ay = path[i][0] - position.lat;
+      const dx = (path[i + 1][1] - path[i][1]) * scale, dy = path[i + 1][0] - path[i][0], length = dx * dx + dy * dy;
+      const t = length ? Math.min(1, Math.max(0, -(ax * dx + ay * dy) / length)) : 0, gap = Math.hypot(ax + t * dx, ay + t * dy);
+      if (gap < best) { best = gap; at = i; nearest = [path[i][0] + t * (path[i + 1][0] - path[i][0]), path[i][1] + t * (path[i + 1][1] - path[i][1])]; }
+    }
+    guide.walked.setPath([...path.slice(0, at + 1), nearest].map(point));
+    guide.line.setPath([nearest, ...path.slice(at + 1)].map(point));
+  }
+  function loadGoogleMaps() {
+    if (window.google?.maps?.Map) return Promise.resolve();
+    if (!mapsEmbedKey) return Promise.reject(new Error('no key'));
+    if (!guide.loading) guide.loading = new Promise((resolve, reject) => {
+      window.__guideMapReady = resolve;
+      window.gm_authFailure = () => { guide.mode = 'embed'; guide.map = null; showEmbedMap(); };
+      const script = document.createElement('script');
+      script.src = 'https://maps.googleapis.com/maps/api/js?key=' + encodeURIComponent(mapsEmbedKey) + '&v=weekly&loading=async&callback=__guideMapReady';
+      script.async = true;
+      script.onerror = () => reject(new Error('blocked'));
+      document.head.append(script);
+      setTimeout(() => reject(new Error('timeout')), 8000);
+    });
+    return guide.loading;
+  }
+  function showEmbedMap() {
+    el('routeCanvas').hidden = true;
+    el('routeCanvas').replaceChildren();
+    el('routeMapFrame').hidden = !mapsEmbedKey;
+    el('routeView').hidden = !mapsEmbedKey;
+    el('routeRecenter').hidden = el('routeOverview').hidden = el('routeRotate').hidden = true;
+    renderRouteMap(true);
+  }
+  async function drawGuideMap(keepView = false) {
+    const route = guide.route;
+    if (guide.mode === 'embed') return showEmbedMap();
+    try { await loadGoogleMaps(); } catch { guide.mode = 'embed'; return showEmbedMap(); }
+    if (guide.route !== route || guide.mode === 'embed') return;
+    const g = google.maps;
+    el('routeView').hidden = false; el('routeCanvas').hidden = false; el('routeMapFrame').hidden = true; el('routeMapFrame').src = 'about:blank';
+    el('routeRecenter').hidden = el('routeOverview').hidden = el('routeRotate').hidden = false;
+    if (!guide.map) {
+      guide.map = new g.Map(el('routeCanvas'), { center: { lat: route.destination.lat, lng: route.destination.lon }, zoom: 17, disableDefaultUI: true, zoomControl: true, gestureHandling: 'greedy', clickableIcons: false,
+        renderingType: g.RenderingType?.VECTOR, colorScheme: darkPage() ? g.ColorScheme?.DARK : g.ColorScheme?.LIGHT });
+      guide.map.addListener('dragstart', () => { guide.follow = false; });
+      guide.walked = new g.Polyline({ map: guide.map, strokeColor: '#8a9a92', strokeOpacity: .9, strokeWeight: 6, zIndex: 1 });
+      guide.line = new g.Polyline({ map: guide.map, strokeColor: '#0a6a45', strokeOpacity: .95, strokeWeight: 7, zIndex: 2 });
+      guide.destMark = new g.Marker({ map: guide.map, zIndex: 3 });
+      guide.turnMark = new g.Marker({ map: guide.map, zIndex: 5, icon: { path: g.SymbolPath.CIRCLE, scale: 9, fillColor: '#ffffff', fillOpacity: 1, strokeColor: '#e8590c', strokeWeight: 5 } });
+      guide.me = new g.Marker({ map: guide.map, zIndex: 10 });
+    }
+    guide.mode = 'google';
+    applyGuideLook();
+    guide.destMark.setPosition({ lat: route.destination.lat, lng: route.destination.lon });
+    guide.destMark.setTitle(route.destination.name);
+    const next = route.steps[route.next] || route.destination;
+    guide.turnMark.setPosition({ lat: next.lat, lng: next.lon });
+    placeMe();
+    if (!keepView) fitGuideRoute();
+  }
+  function fitGuideRoute() {
+    if (guide.mode !== 'google' || !guide.map || !guide.route) return;
+    const bounds = new google.maps.LatLngBounds();
+    guide.route.path.forEach(([lat, lng]) => bounds.extend({ lat, lng }));
+    if (position) bounds.extend({ lat: position.lat, lng: position.lon });
+    guide.follow = false;
+    guide.map.setHeading(0);
+    guide.map.fitBounds(bounds, 48);
+    placeMe();
+  }
+  function placeMe() {
+    if (guide.mode !== 'google' || !guide.map || !position) return;
+    const g = google.maps, at = { lat: position.lat, lng: position.lon }, heading = currentHeading();
+    if (guide.follow) {
+      guide.map.panTo(at);
+      const wanted = guide.headingUp && heading !== null ? heading : 0;
+      if (turned(wanted, guide.map.getHeading() || 0) > 8) guide.map.setHeading(wanted);
+    }
+    const scale = guide.big ? 1.4 : 1;
+    guide.me.setPosition(at);
+    guide.me.setIcon(heading === null
+      ? { path: g.SymbolPath.CIRCLE, scale: 9 * scale, fillColor: '#1a73e8', fillOpacity: 1, strokeColor: '#ffffff', strokeWeight: 3 }
+      : { path: g.SymbolPath.FORWARD_CLOSED_ARROW, rotation: heading - (guide.map.getHeading() || 0), scale: 7 * scale, fillColor: '#1a73e8', fillOpacity: 1, strokeColor: '#ffffff', strokeWeight: 2 });
+    splitRoute();
+  }
+  function showTurn(next, nav) {
+    el('routeArrow').dataset.turn = next.turn;
+    el('routeDistance').textContent = !next.distance ? 'Next' : next.distance_m <= 25 ? 'Now' : 'In ' + next.distance;
+    el('routeSay').textContent = firstSentence(next.say);
+    el('routeRelative').textContent = nav?.off_route ? 'You are off the route. Finding a new one.' : next.relative ? 'It is ' + next.relative : '';
+    el('routeTurn').classList.toggle('off', Boolean(nav?.off_route));
+    [...el('routeSteps').children].forEach((item, i) => { item.classList.toggle('done', i < next.index); item.classList.toggle('current', i === next.index); });
+    if (nav) {
+      el('routeRemaining').textContent = nav.remaining + ' to go';
+      const done = nav.total_m ? Math.min(1, Math.max(0, 1 - nav.remaining_m / nav.total_m)) : 0;
+      el('routeBar').style.width = Math.round(done * 100) + '%';
+    }
+    if (guide.mode === 'google' && guide.turnMark && Number.isFinite(next.lat)) guide.turnMark.setPosition({ lat: next.lat, lng: next.lon });
+  }
+  async function openGuide(keepView = false) {
+    let route;
+    try { route = await call('/navigation/route?session=' + session); } catch { return; }
+    if (!route.active) return closeGuide();
+    clearTimeout(guide.hideTimer);
+    guide.route = route; guide.nav = null;
+    mapDestination = { lat: route.destination.lat, lon: route.destination.lon };
+    el('routeDest').textContent = route.destination.name;
+    el('routeRemaining').textContent = '';
+    el('routeBar').style.width = '0%';
+    el('routeSteps').replaceChildren(...route.steps.map(step => { const item = document.createElement('li'); item.textContent = step.say; return item; }));
+    el('routeMap').classList.remove('arrived');
+    el('routeMap').hidden = false;
+    const next = route.steps[route.next] || { say: route.destination.name + ' is ahead.', turn: 'arrive' };
+    showTurn({ ...next, index: route.next, distance: '', relative: '' });
+    drawGuideMap(keepView);
+    reportLocation(true);
+  }
+  function closeGuide() {
+    clearTimeout(guide.hideTimer);
+    guide.route = guide.nav = null; mapDestination = null;
+    el('routeMap').hidden = true;
+    el('routeMapFrame').src = 'about:blank';
+  }
+  function updateGuide(nav) {
+    if (nav.active && nav.next) {
+      if (!guide.route || nav.rerouted) return void openGuide(Boolean(guide.route));
+      guide.nav = nav;
+      showTurn(nav.next, nav);
+      placeMe();
+      if (guide.mode === 'embed') renderRouteMap();
+      if (nav.say) { el('routeTurn').classList.remove('pulse'); void el('routeTurn').offsetWidth; el('routeTurn').classList.add('pulse'); }
+    } else if (guide.route && nav.say) {
+      el('routeArrow').dataset.turn = 'arrive';
+      el('routeDistance').textContent = 'Arrived';
+      el('routeSay').textContent = nav.say;
+      el('routeRelative').textContent = '';
+      el('routeRemaining').textContent = '';
+      el('routeBar').style.width = '100%';
+      el('routeMap').classList.add('arrived');
+      guide.route = null;
+      guide.hideTimer = setTimeout(closeGuide, 12000);
+    } else if (guide.route) closeGuide();
+  }
+  el('routeAsk').onclick = () => ask('Which way do I turn?');
+  el('routeStop').onclick = () => ask('Stop navigation');
+  el('routeOverview').onclick = fitGuideRoute;
+  el('routeRecenter').onclick = () => {
+    if (guide.mode !== 'google' || !guide.map || !position) return;
+    guide.follow = true;
+    guide.map.setZoom(18);
+    placeMe();
+  };
+  el('routeRotate').onclick = () => {
+    guide.headingUp = !guide.headingUp;
+    store.set('guideband_heading_up', guide.headingUp ? 'yes' : 'no');
+    applyGuideLook();
+    if (guide.mode !== 'google' || !guide.map) return;
+    guide.follow = true;
+    if (!guide.headingUp) guide.map.setHeading(0);
+    placeMe();
+  };
+  el('routeBig').onclick = () => {
+    guide.big = !guide.big;
+    store.set('guideband_route_big', guide.big ? 'yes' : 'no');
+    applyGuideLook();
+    placeMe();
+  };
+  applyGuideLook();
+  if ('vibrate' in navigator && matchMedia('(pointer: coarse)').matches) el('routeHint').hidden = false;
+  el('routeMapClose').onclick = () => {
+    const hidden = el('routeMap').classList.toggle('no-map');
+    el('routeMapClose').textContent = hidden ? 'Show map' : 'Hide map';
+    if (!hidden) fitGuideRoute();
+  };
   el('apiForm').onsubmit = e => {
     e.preventDefault();
     const value = el('apiInput').value.trim().replace(/\/$/, '');
@@ -452,10 +661,7 @@
       item.append(link);
       window.open(reply.open_url, '_blank', 'noopener');
     }
-    if (reply.map_url) {
-      showRouteMap(reply.map_url);
-      if (!mapsEmbedKey) addMessage('guide', 'The route is active. Enable Google Maps Embed API to show the companion map here.');
-    }
+    if (reply.map_url) openGuide();
     if (reply.timer) {
       const { seconds, label } = reply.timer;
       setTimeout(() => {
@@ -465,7 +671,7 @@
         buzz([300, 120, 300, 120, 300]);
       }, seconds * 1000);
     }
-    if (reply.intent === 'nav_stop' || (reply.intent === 'navigate' && !reply.navigating)) el('navStatus').textContent = '';
+    if (reply.intent === 'nav_stop' || (reply.intent === 'navigate' && !reply.navigating)) { el('navStatus').textContent = ''; closeGuide(); }
     if (reply.navigating) el('navStatus').textContent = 'Directions are on. Keep walking — I will speak each turn.';
     if (reply.intent === 'bridge') selectTab('bridge');
     if (activeTab === 'memory') loadMemory();
@@ -845,20 +1051,25 @@
   function onPosition(fix) {
     const first = !position;
     position = { lat: fix.coords.latitude, lon: fix.coords.longitude };
-    renderRouteMap();
+    placeMe();
     if (first) {
       refreshPermissions();
       if (retryWithLocation) { const again = retryWithLocation; retryWithLocation = ''; ask(again); }
     }
-    if (!online || Date.now() - lastSent < 4000) return;
+    reportLocation();
+  }
+  function reportLocation(force = false) {
+    if (!online || !position || (!force && Date.now() - lastSent < (guide.route ? 2000 : 4000))) return;
     lastSent = Date.now();
     const body = new FormData();
     addLocation(body);
     body.append('session', session);
+    if (compassHeading !== null) { body.append('heading', compassHeading.toFixed(0)); compassSent = compassHeading; }
     call('/location', { method: 'POST', body }).then(nav => {
       if (nav.active) el('navStatus').textContent = 'Walking to ' + nav.destination + ' · ' + nav.remaining + ' to go';
       else if (nav.say) el('navStatus').textContent = '';
-      if (nav.say) { addMessage('guide', nav.say, 'directions'); speak(nav.say); buzz([200, 100, 200]); }
+      if (nav.say) { addMessage('guide', nav.say, 'directions'); speak(nav.say); turnBuzz(nav); }
+      updateGuide(nav);
     }).catch(() => {});
   }
   el('locationToggle').onchange = () => {
@@ -868,6 +1079,7 @@
       return;
     }
     if (!navigator.geolocation) { el('locationToggle').checked = false; return addMessage('error', 'This browser cannot share location.'); }
+    startCompass();
     watchId = navigator.geolocation.watchPosition(onPosition, () => {
       el('locationToggle').checked = false; watchId = null;
       addMessage('error', 'Location permission was denied. Directions need it.');

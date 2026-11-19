@@ -201,6 +201,65 @@
 .zoom-step:active { transform: scale(.94); }
 .zoom-step:disabled { opacity: .45; cursor: default; filter: none; }
 .zoom-step:hover::after { opacity: 0; }
-.route-map { margin: .8rem 0; border: 1px solid rgba(255,255,255,.18); border-radius: 14px; overflow: hidden; background: rgba(8,15,25,.7); }
-.route-map-head { display:flex; justify-content:space-between; align-items:center; padding:.55rem .7rem; font-size:.9rem; }
-.route-map iframe { display:block; width:100%; min-height:280px; border:0; background:#162130; }
+.route-map { margin: 12px 0; border: 1px solid var(--glass-edge); border-radius: 22px; overflow: hidden; background: var(--glass-strong); }
+.route-turn { display: flex; align-items: center; gap: 14px; padding: 14px 16px; }
+.route-arrow { flex: none; width: 68px; height: 68px; border-radius: 20px; display: grid; place-items: center; background: var(--accent); color: var(--accent-ink); }
+.route-arrow svg { width: 40px; height: 40px; fill: currentColor; transition: transform .35s ease; }
+.route-arrow .arrow-arrive, .route-arrow[data-turn="arrive"] .arrow-go { display: none; }
+.route-arrow[data-turn="arrive"] .arrow-arrive { display: block; }
+.route-arrow[data-turn="left"] .arrow-go { transform: rotate(-90deg); }
+.route-arrow[data-turn="right"] .arrow-go { transform: rotate(90deg); }
+.route-arrow[data-turn="slight-left"] .arrow-go { transform: rotate(-45deg); }
+.route-arrow[data-turn="slight-right"] .arrow-go { transform: rotate(45deg); }
+.route-arrow[data-turn="uturn"] .arrow-go { transform: rotate(180deg); }
+.route-turn-text { flex: 1; min-width: 0; }
+.route-turn-text p { margin: 0; }
+.route-distance { font-size: 26px; font-weight: 800; line-height: 1.1; color: var(--ink); }
+.route-say { margin-top: 4px !important; font-size: 17px; font-weight: 600; line-height: 1.3; color: var(--ink); }
+.route-relative { margin-top: 2px !important; font-size: 14.5px; font-weight: 600; color: var(--accent); }
+.route-relative:empty { display: none; }
+.route-turn.pulse .route-arrow { animation: route-pulse 1.4s ease 2; }
+@keyframes route-pulse { 50% { transform: scale(1.12); box-shadow: 0 0 0 10px var(--icon-bg); } }
+.route-progress { padding: 0 16px 12px; }
+.route-progress-text { display: flex; justify-content: space-between; gap: 12px; font-size: 14.5px; color: var(--muted); }
+.route-progress-text strong { color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.route-progress-text span { flex: none; font-weight: 600; }
+.route-bar { margin-top: 8px; height: 8px; border-radius: 99px; background: var(--icon-bg); overflow: hidden; }
+.route-bar i { display: block; height: 100%; width: 0; border-radius: 99px; background: var(--accent); transition: width .6s ease; }
+.route-view { background: var(--screen); }
+.route-canvas, .route-map iframe { display: block; width: 100%; height: 320px; border: 0; }
+.route-canvas[hidden], .route-map iframe[hidden], .route-view[hidden], .route-actions .btn[hidden], .route-map.no-map .route-view { display: none; }
+.route-steps-box { padding: 10px 16px 0; font-size: 15px; }
+.route-steps-box summary { cursor: pointer; font-weight: 700; color: var(--ink); }
+.route-steps { margin: 8px 0 0; padding-left: 22px; max-height: 190px; overflow: auto; color: var(--muted); }
+.route-steps li { padding: 4px 0; }
+.route-steps li.done { opacity: .5; text-decoration: line-through; }
+.route-steps li.current { color: var(--ink); font-weight: 700; }
+.route-actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 16px 14px; }
+.route-actions .route-stop { margin-left: auto; }
+.route-map.arrived .route-actions, .route-map.arrived .route-steps-box, .route-map.arrived .route-hint { display: none; }
+.route-hint { margin: 0; padding: 0 16px 14px; font-size: 13.5px; color: var(--muted); }
+.route-hint[hidden] { display: none; }
+.route-turn.off .route-arrow { background: #e8590c; color: #fff; }
+.route-turn.off .route-relative { color: #e8590c; }
+.route-map.big { background: #000; border-color: #fff; }
+.route-map.big .route-arrow { width: 104px; height: 104px; border-radius: 26px; background: #ffe600; color: #000; }
+.route-map.big .route-arrow svg { width: 64px; height: 64px; }
+.route-map.big .route-distance { font-size: 42px; color: #fff; }
+.route-map.big .route-say { font-size: 25px; color: #fff; }
+.route-map.big .route-relative { font-size: 20px; color: #ffe600; }
+.route-map.big .route-progress-text { font-size: 19px; color: #fff; }
+.route-map.big .route-progress-text strong { color: #fff; }
+.route-map.big .route-bar { height: 12px; background: #333; }
+.route-map.big .route-bar i { background: #ffe600; }
+.route-map.big .route-canvas, .route-map.big iframe { height: 400px; }
+.route-map.big .route-steps-box, .route-map.big .route-hint { font-size: 18px; color: #fff; }
+.route-map.big .route-steps-box summary, .route-map.big .route-steps li.current { color: #fff; }
+.route-map.big .route-steps { color: #ddd; }
+.route-map.big .route-actions .btn { min-height: 52px; font-size: 18px; color: #fff; }
+@media (max-width: 560px) {
+  .route-turn { flex-wrap: wrap; }
+  .route-turn .btn { width: 100%; }
+  .route-actions .route-stop { margin-left: 0; }
+}
+@media (prefers-reduced-motion: reduce) { .route-turn.pulse .route-arrow { animation: none; } }
