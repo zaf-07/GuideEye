@@ -40,6 +40,11 @@ SYSTEM_PROMPT = (
 DEFAULT_QUESTION = 'Briefly, what is in front of me?'
 
 
+def setting(name: str, default: str = '') -> str:
+    """Read current Ultralytics-prefixed settings, with legacy fallback."""
+    return os.getenv(f'ULTRALYTICS_YOLO_{name}', os.getenv(f'YOLO_{name}', default))
+
+
 class VisionError(Exception):
     """The image could not be read."""
 
@@ -110,17 +115,19 @@ class Detector:
 
     @staticmethod
     def _weights() -> str:
-        configured = os.getenv('YOLO_MODEL')
+        configured = setting('MODEL')
         if configured:
             return configured
         bundled = Path(__file__).resolve().parents[2] / 'models' / 'yolo11n.pt'
-        # Ultralytics downloads the weights by name when no local file exists.
-        return str(bundled) if bundled.is_file() else 'yolo11n.pt'
+        # Supplying the full path lets Ultralytics cache a first download in
+        # the ignored backend model directory rather than the repository root.
+        bundled.parent.mkdir(parents=True, exist_ok=True)
+        return str(bundled)
 
     def _load(self):
         if self._model is None and self._error is None:
-            if os.getenv('YOLO_ENABLED', 'true').lower() in {'0', 'false', 'no'}:
-                self._error = 'disabled by YOLO_ENABLED'
+            if setting('ENABLED', 'true').lower() in {'0', 'false', 'no'}:
+                self._error = 'disabled by ULTRALYTICS_YOLO_ENABLED'
                 return None
             try:
                 from ultralytics import YOLO
@@ -146,8 +153,8 @@ class Detector:
                 return []
             results = model.predict(
                 frame,
-                conf=float(os.getenv('YOLO_MIN_CONFIDENCE', '0.35')),
-                device=os.getenv('YOLO_DEVICE') or None,
+                conf=float(setting('MIN_CONFIDENCE', '0.35')),
+                device=setting('DEVICE') or None,
                 verbose=False,
             )
         detections = []

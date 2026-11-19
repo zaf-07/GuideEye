@@ -1,5 +1,7 @@
 import asyncio
+import os
 import unittest
+from unittest import mock
 
 from backend.app.services import vision
 
@@ -9,6 +11,14 @@ def det(label, x1, x2, conf=0.9, y1=0.2, y2=0.8):
 
 
 class VisionTests(unittest.TestCase):
+    def test_ultralytics_prefixed_settings_configure_detector(self):
+        with mock.patch.dict(os.environ, {
+            'ULTRALYTICS_YOLO_MODEL': 'custom-yolo.pt',
+            'ULTRALYTICS_YOLO_DEVICE': 'cpu',
+        }, clear=False):
+            self.assertEqual(vision.Detector._weights(), 'custom-yolo.pt')
+            self.assertEqual(vision.setting('DEVICE'), 'cpu')
+
     def test_zone_names_follow_horizontal_position(self):
         self.assertEqual(vision.zone(0.1), 'on the left')
         self.assertEqual(vision.zone(0.3), 'ahead, left')
