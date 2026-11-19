@@ -46,6 +46,7 @@ class RouteTests(unittest.TestCase):
             'Start Bridge': 'bridge',
             'Call Alex': 'call',
             'Open WhatsApp': 'open_app',
+            'I want to make a new contact': 'contact_add',
             'yes': 'nothing_pending',
         }
         for text, intent in cases.items():
@@ -56,6 +57,25 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(route('no thanks', True), 'pay_cancel')
         self.assertEqual(route('buy me a sandwich', True), 'pay_waiting')
         self.assertEqual(route('yesterday was nice', True), 'pay_waiting')
+
+
+class ContactConversationTests(NoCloud):
+    def test_spoken_contact_collects_name_then_dictated_whatsapp_number(self):
+        memory = Memory(':memory:')
+        assistant = Assistant(memory, Orders())
+        first = run(assistant.respond('contact', 'I want to make a new contact'))
+        self.assertEqual(first['intent'], 'contact_waiting')
+        name = run(assistant.respond('contact', 'Jordan Lee'))
+        self.assertEqual(name['intent'], 'contact_waiting')
+        saved = run(assistant.respond('contact', 'one four one five five five five zero one one one'))
+        self.assertEqual(saved['intent'], 'contact_saved')
+        self.assertEqual(memory.contacts(), [{'name': 'Jordan Lee', 'phone': '14155550111'}])
+
+    def test_contact_can_include_name_and_number_together(self):
+        memory = Memory(':memory:')
+        assistant = Assistant(memory, Orders())
+        saved = run(assistant.respond('contact', 'add a new contact named Sam number 14155550112'))
+        self.assertEqual((saved['intent'], saved['contact']['name']), ('contact_saved', 'Sam'))
 
 
 class MemoryTests(NoCloud):

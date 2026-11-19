@@ -1,18 +1,22 @@
 // GuideEye sign reading, fully on-device.
-// MediaPipe finds 21 hand landmarks per frame; a small linear model (trained for
-// GuideLens) classifies ASL fingerspelling letters from them, and a few simple
-// finger-shape rules recognise whole-hand signs. Nothing leaves the browser.
+// MediaPipe finds both sets of hand landmarks and facial landmarks per frame.
+// ASL uses non-manual markers (brows, mouth and head movement) as well as one
+// or two hands, so face landmarks are used as signing context -- never to
+// identify a person. Nothing leaves the browser.
 window.GuideSigns = (() => {
   const BUNDLE = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.2.0/vision_bundle.mjs';
   const WASM = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.2.0/wasm';
   const HAND_MODEL = 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task';
+  const FACE_MODEL = 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task';
+  const POSE_MODEL = 'models/sign2text/pose_landmarker_lite.task';
   const BONES = [[0, 1], [1, 2], [2, 3], [3, 4], [0, 5], [5, 6], [6, 7], [7, 8], [5, 9], [9, 10], [10, 11], [11, 12],
     [9, 13], [13, 14], [14, 15], [15, 16], [13, 17], [17, 18], [18, 19], [19, 20], [0, 17]];
 
   const MIN_LETTER_CONFIDENCE = 0.62, HOLD_FRAMES = 6, REPEAT_MS = 1200, SPACE_MS = 1800;
   const WINDOW = 10, WORD_VOTES = 7; // a sign must be seen in 7 of the last 10 frames, about half a second
 
-  let detector = null, model = null, loading = null;
+  let detector = null, faceDetector = null, poseDetector = null, features = null, model = null, loading = null;
+  let wordModel = null, wordLabels = [], wordFrames = [], wordBusy = false, wordCandidate = '', wordCount = 0;
   let running = false, video = null, canvas = null, handlers = {}, mode = 'words';
   let lastDetect = 0;
   // letters
@@ -30,8 +34,37 @@ window.GuideSigns = (() => {
       const files = await vision.FilesetResolver.forVisionTasks(WASM);
       detector = await vision.HandLandmarker.createFromOptions(files, {
         baseOptions: { modelAssetPath: HAND_MODEL, delegate: 'GPU' },
-        runningMode: 'VIDEO', numHands: 1,
+        runningMode: 'VIDEO', numHands: 2,
+        minHandDetectionConfidence: 0.45, minHandPresenceConfidence: 0.45, minTrackingConfidence: 0.45,
       });
+      // Facial context improves interpretation but must not prevent signing
+      // from working on an older GPU or while the optional model is loading.
+      try {
+        faceDetector = await vision.FaceLandmarker.createFromOptions(files, {
+          baseOptions: { modelAssetPath: FACE_MODEL, delegate: 'GPU' },
+          runningMode: 'VIDEO', numFaces: 1, outputFaceBlendshapes: true,
+        });
+      } catch {
+        try {
+          faceDetector = await vision.FaceLandmarker.createFromOptions(files, {
+            baseOptions: { modelAssetPath: FACE_MODEL, delegate: 'CPU' },
+            runningMode: 'VIDEO', numFaces: 1, outputFaceBlendshapes: true,
+          });
+        } catch { faceDetector = null; }
+      }
+      try { poseDetector = await vision.PoseLandmarker.createFromOptions(files, { baseOptions: { modelAssetPath: POSE_MODEL, delegate: 'GPU' }, runningMode: 'VIDEO', numPoses: 1 }); } catch { poseDetector = null; }
+      // Sign2Text is a single, fixed 150-gloss temporal vocabulary.
+      try {
+        features = await import('./sign2text-features.js');
+        wordLabels = await fetch('models/sign2text/labels.json').then(r => r.json());
+        await new Promise((resolve, reject) => {
+          if (window.ort) return resolve();
+          const script = document.createElement('script'); script.src = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/ort.min.js';
+          script.onload = resolve; script.onerror = reject; document.head.append(script);
+        });
+        window.ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/';
+        wordModel = await window.ort.InferenceSession.create('models/sign2text/pose.onnx', { executionProviders: ['wasm'] });
+      } catch { wordModel = null; }
     })().catch(error => { loading = null; throw error; });
     return loading;
   }
@@ -100,10 +133,19 @@ window.GuideSigns = (() => {
     if (s.pinch < 0.3 && up('middle') && up('ring') && up('pinky') && !up('index')) return 'OK';
     // "I love you": thumb, index and little finger up, middle and ring folded.
     if (up('index') && up('pinky') && down('middle') && down('ring') && s.thumb !== 'down') return 'I love you';
+    // Common conversational signs that are unambiguous while held still.
+    // Numbers are useful in a conversation and, unlike a guessed word, are
+    // safe to expose only when the finger count is clear.
+    if (fingersUp === 1 && up('index')) return 'One';
+    if (fingersUp === 2 && up('index') && up('middle')) return 'Two';
+    if (fingersUp === 3 && up('index') && up('middle') && up('ring')) return 'Three';
+    if (fingersUp === 4 && s.thumb === 'down') return 'Four';
+    if (fingersUp === 4 && s.thumb === 'up') return 'Five';
     // A fist with only the thumb out: up is yes, down is no.
     if (fingersDown === 4 && s.thumb === 'up') {
       if (s.thumbUpward > 0.55) return 'Yes';
       if (s.thumbUpward < -0.55) return 'No';
+      return 'Good';
       return '';
     }
     if (fingersUp === 4 && s.thumb === 'up') return 'Hello';
@@ -116,8 +158,8 @@ window.GuideSigns = (() => {
     return '';
   }
 
-  function emit(current, confidence, progress) {
-    handlers.onUpdate?.({ mode, current, confidence, progress, text: spelled });
+  function emit(current, confidence, progress, context = {}) {
+    handlers.onUpdate?.({ mode, current, confidence, progress, text: spelled, ...context });
   }
 
   function stepLetters(points, handedness, now) {
@@ -247,15 +289,53 @@ window.GuideSigns = (() => {
     return '';
   }
 
-  function stepWords(points, now) {
+  function readTwoHandWord(hands) {
+    if (!hands || hands.length < 2) return '';
+    const [a, b] = hands, first = handShape(a), second = handShape(b);
+    const open = shape => ['index', 'middle', 'ring', 'pinky'].filter(name => shape[name] === 'up').length === 4;
+    const fist = shape => ['index', 'middle', 'ring', 'pinky'].filter(name => shape[name] === 'down').length === 4;
+    const thumbUp = shape => fist(shape) && shape.thumb === 'up' && shape.thumbUpward > 0.45;
+    const point = shape => shape.index === 'up' && shape.middle === 'down' && shape.ring === 'down' && shape.pinky === 'down';
+    // HELP: a thumbs-up fist rises from the open palm of the other hand.
+    if ((thumbUp(first) && open(second)) || (thumbUp(second) && open(first))) return 'Help';
+    // MORE: both pinched hands meet; PAIN: two index fingers meet.
+    if (first.pinch < 0.35 && second.pinch < 0.35 && dist(a[8], b[8]) < 0.9 * Math.max(first.size, second.size)) return 'More';
+    if (point(first) && point(second) && dist(a[8], b[8]) < 0.8 * Math.max(first.size, second.size)) return 'Pain';
+    // Two open, facing hands are a common two-handed signing posture.  We do
+    // not guess a word from it alone, but retain both landmark sets for motion
+    // tracking instead of silently dropping the second hand.
+    return '';
+  }
+
+  function faceContext(result) {
+    const categories = result?.faceBlendshapes?.[0]?.categories || [];
+    const score = name => categories.find(item => item.categoryName === name)?.score || 0;
+    const brow = Math.max(score('browInnerUp'), score('browOuterUpLeft'), score('browOuterUpRight'));
+    const frown = Math.max(score('mouthFrownLeft'), score('mouthFrownRight'));
+    const smile = Math.max(score('mouthSmileLeft'), score('mouthSmileRight'));
+    if (brow > 0.45) return 'raised brows (question)';
+    if (frown > 0.45) return 'frown';
+    if (smile > 0.45) return 'smile';
+    return '';
+  }
+
+  async function temporalWord(frame) {
+    if (!wordModel || !features || wordBusy || !frame) return null;
+    wordFrames.push(frame); if (wordFrames.length > 120) wordFrames.shift(); if (wordFrames.length < 10) return null;
+    wordBusy = true;
+    try { const data = features.poseFeatures(wordFrames); const out = await wordModel.run({ pose: new window.ort.Tensor('float32', data, [1,32,402]) }); const logits = out.logits.data, top = logits.indexOf(Math.max(...logits)); const confidence = Math.exp(logits[top] - Math.max(...logits)) / Array.from(logits, v => Math.exp(v - Math.max(...logits))).reduce((a,b) => a+b, 0); const label = wordLabels[top]; wordCount = confidence > .30 && label === wordCandidate ? wordCount + 1 : 1; wordCandidate = label; return wordCount >= 2 ? { label, confidence } : null; } catch { wordModel = null; return null; } finally { wordBusy = false; }
+  }
+
+  function stepWords(points, now, hands = [], face = '') {
     if (!points) trail.length = 0;
-    const motion = points ? readMotion(points, now) : '';
+    const twoHandWord = readTwoHandWord(hands);
+    const motion = twoHandWord || (points ? readMotion(points, now) : '');
     if (motion && (motion !== lastMotion || now - lastMotionAt > 2500)) {
       lastMotion = motion; lastMotionAt = now; motionQuietUntil = now + 1500;
       trail.length = 0; votes = []; heldWord = motion; lastWord = motion;
       spelled = (spelled + ' ' + motion).trim().split(' ').slice(-12).join(' ');
       handlers.onWord?.(motion, 0.92);
-      return emit(motion, 0.92, 1);
+      return emit(motion, 0.92, 1, { handCount: hands.length, face });
     }
     // Still handshapes (I love you, OK, peace...) need a steady hand, and wait a moment after a moving sign.
     const steady = trail.length >= 6 && Math.hypot(span(trail.slice(-8).map(f => f.x)), span(trail.slice(-8).map(f => f.y))) < 0.3 * trail[trail.length - 1].size;
@@ -274,15 +354,15 @@ window.GuideSigns = (() => {
       spelled = (spelled + ' ' + word).trim().split(' ').slice(-12).join(' ');
       handlers.onWord?.(word, confidence);
     }
-    emit(word, confidence, Math.min(1, count / WORD_VOTES));
+    emit(word, confidence, Math.min(1, count / WORD_VOTES), { handCount: hands.length, face });
   }
 
-  function draw(points) {
+  function draw(points, allHands = [], facePoints = []) {
     const stage = canvas.parentElement;
     const w = canvas.width = stage.clientWidth, h = canvas.height = stage.clientHeight;
     const ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, w, h);
-    if (!points || !video.videoWidth) return;
+    if ((!points && !facePoints.length) || !video.videoWidth) return;
     // Same mapping as object-fit: cover on the video element.
     const scale = Math.max(w / video.videoWidth, h / video.videoHeight);
     const dx = (w - video.videoWidth * scale) / 2, dy = (h - video.videoHeight * scale) / 2;
@@ -291,9 +371,17 @@ window.GuideSigns = (() => {
     const at = pt => [w / 2 + (dx + pt.x * video.videoWidth * scale - w / 2) * zoom,
       h / 2 + (dy + pt.y * video.videoHeight * scale - h / 2) * zoom];
     ctx.strokeStyle = '#d8ff70'; ctx.lineWidth = 3; ctx.lineCap = 'round';
-    for (const [a, b] of BONES) { ctx.beginPath(); ctx.moveTo(...at(points[a])); ctx.lineTo(...at(points[b])); ctx.stroke(); }
-    ctx.fillStyle = '#ffffff';
-    for (const pt of points) { ctx.beginPath(); ctx.arc(...at(pt), 4, 0, Math.PI * 2); ctx.fill(); }
+    for (const hand of allHands) {
+      for (const [a, b] of BONES) { ctx.beginPath(); ctx.moveTo(...at(hand[a])); ctx.lineTo(...at(hand[b])); ctx.stroke(); }
+      ctx.fillStyle = '#ffffff';
+      for (const pt of hand) { ctx.beginPath(); ctx.arc(...at(pt), 4, 0, Math.PI * 2); ctx.fill(); }
+    }
+    // A sparse face contour makes the non-manual marker tracking visible
+    // without covering the signer’s face or turning this into face ID.
+    if (facePoints.length) {
+      ctx.fillStyle = '#8ad7ff';
+      for (let i = 0; i < facePoints.length; i += 12) { ctx.beginPath(); ctx.arc(...at(facePoints[i]), 1.5, 0, Math.PI * 2); ctx.fill(); }
+    }
   }
 
   function loop() {
@@ -302,12 +390,21 @@ window.GuideSigns = (() => {
     const now = performance.now();
     if (!detector || video.readyState < 2 || now - lastDetect < 60) return; // about 15 frames a second
     lastDetect = now;
-    let result;
-    try { result = detector.detectForVideo(video, now); } catch { return; }
-    const points = result.landmarks?.[0] || null;
+    let result, faces, poses;
+    try { result = detector.detectForVideo(video, now); faces = faceDetector?.detectForVideo(video, now); poses = poseDetector?.detectForVideo(video, now); } catch { return; }
+    const hands = result.landmarks || [];
+    const points = hands[0] || null;
     const handedness = (result.handednesses || result.handedness)?.[0]?.[0]?.categoryName || 'Right';
-    draw(points);
-    if (mode === 'letters') stepLetters(points, handedness, Date.now()); else stepWords(points, Date.now());
+    const facePoints = faces?.faceLandmarks?.[0] || [];
+    const face = faceContext(faces);
+    draw(points, hands, facePoints);
+    if (mode === 'letters') stepLetters(points, handedness, Date.now()); else {
+      stepWords(points, Date.now(), hands, face);
+      // The imported model remains available for calibration, but is not
+      // allowed to speak automatically until it is validated on GuideEye's
+      // camera pipeline. Its raw dataset glosses otherwise become confident
+      // nonsense for a real signer.
+    }
   }
 
   return {

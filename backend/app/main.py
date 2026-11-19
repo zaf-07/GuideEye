@@ -667,5 +667,10 @@ async def post_wearable_listen(request: Request):
 # Serve the web app from the same origin, so one address (and one HTTPS
 # certificate or tunnel) covers both the page and the API on a phone.
 WEB_DIR = Path(__file__).resolve().parents[2] / 'web'
+SIGN_MODEL_DIR = Path(__file__).resolve().parents[2] / 'apps' / 'mobile' / 'assets' / 'models'
+if SIGN_MODEL_DIR.is_dir():
+    # The browser Bridge uses this temporal ASL model on-device.  It is mounted
+    # before the web root so the large model is never routed through an API.
+    app.mount('/sign-model', StaticFiles(directory=SIGN_MODEL_DIR), name='sign-model')
 if WEB_DIR.is_dir():
     app.mount('/', StaticFiles(directory=WEB_DIR, html=True), name='web')

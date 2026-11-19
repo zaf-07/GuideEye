@@ -129,6 +129,9 @@ PLACE_GO = re.compile(
     r'|\b(?:directions?|route|way|go|going|head|navigate) (?:to )?(?:my )?(home|house|work|office|school|dorm)\b'
 )
 CALL = re.compile(r'\b(?:call|dial|phone)\s+(?:my\s+)?([a-z][a-z0-9 .-]{1,39})\b', re.IGNORECASE)
+CONTACT_ADD = re.compile(
+    r'\b(?:add|create|make|save|new)\s+(?:a\s+)?(?:new\s+)?(?:whatsapp\s+)?contact\b'
+    r'|\b(?:i want|i need)\s+(?:to\s+)?(?:add|create|make)\s+(?:a\s+)?(?:new\s+)?contact\b', re.IGNORECASE)
 OPEN_APP = re.compile(r'^\W*(?:open|launch|start)\s+(?:the\s+)?(whatsapp|messages|maps|facetime|calendar)\b', re.IGNORECASE)
 BRIDGE = re.compile(r'\bbridge\b')
 NAV = re.compile(
@@ -156,6 +159,36 @@ HELP_TEXT = (
     'Try: what is in front of me?'
 )
 MESSAGE_TTL_SECONDS = 60
+CONTACT_TTL_SECONDS = 120
+PHONE_WORDS = {'zero': '0', 'oh': '0', 'o': '0', 'one': '1', 'two': '2', 'three': '3', 'four': '4',
+               'five': '5', 'six': '6', 'seven': '7', 'eight': '8', 'nine': '9'}
+
+
+def spoken_phone(text: str) -> str:
+    """Extract a 7+ digit phone number from digits or a dictated digit sequence."""
+    direct = re.sub(r'\D', '', text)
+    if len(direct) >= 7:
+        return direct
+    tokens = re.findall(r"[a-z]+|\d", text.lower())
+    run, best = '', ''
+    for token in tokens:
+        digit = PHONE_WORDS.get(token, token if token.isdigit() else '')
+        if digit:
+            run += digit
+        else:
+            if len(run) > len(best): best = run
+            run = ''
+    best = best if len(best) >= len(run) else run
+    return best if len(best) >= 7 else ''
+
+
+def contact_name(text: str) -> str:
+    """Find an optional name in 'add a contact named Sam' without mistaking command words for a name."""
+    match = re.search(r'\b(?:named|name is|for)\s+([a-z][a-z .\'-]{0,39})', text, re.IGNORECASE)
+    if not match:
+        return ''
+    value = re.split(r'\b(?:number|phone|whatsapp)\b|\d', match.group(1), maxsplit=1, flags=re.IGNORECASE)[0]
+    return value.strip(" .,'-").title()
 
 
 def route(text: str, has_pending: bool = False, navigating: bool = False) -> str:
@@ -168,6 +201,8 @@ def route(text: str, has_pending: bool = False, navigating: bool = False) -> str
         return 'pay_waiting'
     if FORGET.search(value):
         return 'forget'
+    if CONTACT_ADD.search(value):
+        return 'contact_add'
     if TIMER.search(value):
         return 'timer'
     if NAV_STOP.search(value):
@@ -233,6 +268,7 @@ class Assistant:
         self._messages: dict[str, dict] = {}
         self._calls: dict[str, dict] = {}
         self._place_changes: dict[str, dict] = {}
+        self._contacts: dict[str, dict] = {}
 
     def pending_message(self, session: str) -> dict | None:
         message = self._messages.get(session)
@@ -246,11 +282,15 @@ class Assistant:
         order = self.orders.pending(session)
         message = self.pending_message(session)
         call = self._calls.get(session)
+        pending_contact = self._contacts.get(session)
         change = self._place_changes.get(session)
         if change and time.time() > change['expires']:
             change = self._place_changes.pop(session, None) and None
         if change and not order and not message and not call:
             return await self._continue_place_change(session, change, text, location)
+        if pending_contact and time.time() > pending_contact['expires']:
+            self._contacts.pop(session, None)
+            pending_contact = None
         intent = route(text, bool(order or message), self.navigator.active(session) is not None)
         if (intent in ('see', 'place_go', 'navigate', 'go_back', 'where_am_i', 'recall', 'help', 'timer')
                 and LOOSE_MESSAGE.search(text.lower()) and self.memory.find_contact(text)):
@@ -264,6 +304,8 @@ class Assistant:
                 intent = 'call_cancel'
             else:
                 intent = 'call_waiting'
+        if pending_contact and not order and not message and not call:
+            intent = 'contact_continue'
         if message and not order:
             intent = intent.replace('pay_', 'message_')
         reply = {'intent': intent, 'heard': text, 'say': '', 'order': None, 'confirm': None, 'open_url': None,
@@ -315,6 +357,10 @@ class Assistant:
         elif intent == 'call_waiting':
             reply['confirm'] = f'Call {call["name"]}?'
             reply['say'] = f'I am waiting for a yes or no before calling {call["name"]}.'
+        elif intent == 'contact_add':
+            self._start_contact(reply, session, text)
+        elif intent == 'contact_continue':
+            self._continue_contact(reply, session, pending_contact, text)
         elif intent == 'open_app':
             self._open_app(reply, text)
         elif intent == 'nothing_pending':
@@ -371,6 +417,55 @@ class Assistant:
         reply['order'] = order
         reply['confirm'] = f'Pay {order["price"]} for {order["item"]}?'
         reply['say'] = f'{order["item"].capitalize()} for {order["price"]}. Say yes to pay, or no to cancel.'
+
+    # ----- contacts -----
+
+    def _start_contact(self, reply: dict, session: str, text: str) -> None:
+        """Start a spoken contact form; save locally once both fields are clear."""
+        self._contacts[session] = {
+            'name': contact_name(text), 'phone': spoken_phone(text),
+            'expires': time.time() + CONTACT_TTL_SECONDS,
+        }
+        self._finish_or_prompt_contact(reply, session)
+
+    def _continue_contact(self, reply: dict, session: str, pending: dict, text: str) -> None:
+        if NO.search(text.lower()):
+            self._contacts.pop(session, None)
+            reply['intent'] = 'contact_cancel'
+            reply['say'] = 'Okay, I cancelled adding that contact.'
+            return
+        name, phone = contact_name(text), spoken_phone(text)
+        # After we explicitly ask for a name, a short spoken reply such as
+        # “Jordan Lee” is the name even though it has no "named" prefix.
+        if not pending['name'] and not name and not phone:
+            candidate = re.sub(r"[^a-zA-Z .'-]", '', text).strip(" .'-")
+            if candidate and len(candidate.split()) <= 4 and not YES.search(candidate) and not NO.search(candidate):
+                name = candidate.title()
+        if name:
+            pending['name'] = name
+        if phone:
+            pending['phone'] = phone
+        pending['expires'] = time.time() + CONTACT_TTL_SECONDS
+        self._finish_or_prompt_contact(reply, session)
+
+    def _finish_or_prompt_contact(self, reply: dict, session: str) -> None:
+        pending = self._contacts[session]
+        if pending['name'] and pending['phone']:
+            try:
+                contact = self.memory.add_contact(pending['name'], pending['phone'])
+            except ValueError:
+                pending['phone'] = ''
+            else:
+                self._contacts.pop(session, None)
+                reply['intent'] = 'contact_saved'
+                reply['contact'] = contact
+                reply['say'] = f"Saved {contact['name']} as a WhatsApp contact."
+                return
+        reply['intent'] = 'contact_waiting'
+        if pending['name']:
+            reply['say'] = f"What is {pending['name']}'s WhatsApp number, including the country code?"
+        else:
+            reply['say'] = 'Who should I add? Say their name, then their WhatsApp number with the country code.'
 
     async def _scan_pay(self, reply: dict, session: str, image: bytes | None, mime: str) -> None:
         if image is None:

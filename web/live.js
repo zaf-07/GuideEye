@@ -469,7 +469,14 @@
 
   async function startCamera() {
     if (!navigator.mediaDevices?.getUserMedia) throw new Error('This browser cannot open the camera here. Use Chrome on localhost or HTTPS.');
-    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: facing }, width: { ideal: 960 } }, audio: false });
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: facing }, width: { ideal: 960 } }, audio: false });
+    } catch (error) {
+      // A remembered/virtual device can disappear after a reload. Retrying
+      // without a device preference lets the browser choose any real camera.
+      if (error.name !== 'NotFoundError' && error.name !== 'OverconstrainedError') throw error;
+      stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    }
     video.srcObject = stream;
     await video.play();
     stage.classList.add('on');
@@ -487,8 +494,14 @@
     overlay.getContext('2d').clearRect(0, 0, overlay.width, overlay.height);
     syncSigns();
   }
-  const cameraError = error => addMessage('error', error.name === 'NotAllowedError'
-    ? 'Camera permission was denied. Allow the camera for this page and try again.' : error.message);
+  let lastCameraError = '';
+  const cameraError = error => {
+    const message = error.name === 'NotAllowedError' ? 'Camera permission was denied. Allow the camera for this page and try again.'
+      : error.name === 'NotFoundError' ? 'No camera is available. Connect or enable a camera, then try again.' : error.message;
+    if (message === lastCameraError) return;
+    lastCameraError = message;
+    addMessage('error', message);
+  };
   el('camBtn').onclick = async () => {
     if (stream) return stopCamera();
     try { await startCamera(); } catch (error) { cameraError(error); }
@@ -632,9 +645,11 @@
     return item;
   }
 
-  let retryWithLocation = '';
+  let retryWithLocation = '', contactNudgeTimer = null, contactConversation = false;
   /** Show and speak one assistant reply, wherever the request came from. */
   function showReply(reply, asked) {
+    clearTimeout(contactNudgeTimer);
+    contactConversation = reply.intent === 'contact_waiting';
     let meta = reply.provider ? sources[reply.provider] + ' · ' + ((reply.latency_ms || 0) / 1000).toFixed(1) + ' s' : '';
     if (reply.intent === 'pay_confirm' && reply.order) {
       meta = reply.order.mode === 'stripe_test' ? 'Stripe test payment · ' + reply.order.status + ' · ' + reply.order.payment_id : 'Simulated payment';
@@ -650,6 +665,15 @@
     awaitingAnswer = reply.intent === 'place_set'; // the assistant asked for an address, or to confirm one
     const item = addMessage('guide', reply.say, meta);
     speak(reply.say);
+    // Contact setup stays conversational: if a person stops after starting it,
+    // gently check whether they still want to dictate the WhatsApp number.
+    if (reply.intent === 'contact_waiting') {
+      contactNudgeTimer = setTimeout(() => {
+        const prompt = 'Do you want to continue adding this contact? Say yes, or say cancel.';
+        addMessage('guide', prompt, 'contact setup');
+        speak(prompt);
+      }, 12000);
+    }
     el('confirmBar').hidden = !reply.confirm;
     if (reply.confirm) { el('confirmText').textContent = reply.confirm; buzz([80, 80, 80]); }
     if (reply.open_url) {
@@ -775,7 +799,7 @@
     if (command) { heardNote(text); stopSpeaking(); buzz(60); return ask(command); }
     if (answering) { heardNote(text); stopSpeaking(); buzz(60); return ask(text); }
     if (el('wakeToggle').checked) return heardNote(text, 'waiting for “Guide”');
-    if (text.split(/\s+/).length < 2) return heardNote(text, 'too short');
+    if (text.split(/\s+/).length < 2 && !contactConversation) return heardNote(text, 'too short');
     heardNote(text); stopSpeaking(); buzz(60);
     ask(text);
   }
@@ -949,6 +973,10 @@
       el('signLive').textContent = state.current
         ? state.current + ' · ' + Math.round(state.confidence * 100) + '% sure'
         : 'No sign in view';
+      if (state.handCount) {
+        const context = [state.handCount + (state.handCount === 1 ? ' hand' : ' hands'), state.face].filter(Boolean).join(' · ');
+        el('signLive').textContent += ' · ' + context;
+      }
       el('signMeter').style.width = Math.round(state.progress * 100) + '%';
       el('signOut').textContent = state.text.trim() || '—';
     },
