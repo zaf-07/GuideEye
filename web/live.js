@@ -16,7 +16,7 @@
   const session = Math.random().toString(36).slice(2, 12);
   let online = false, activeTab = 'assistant';
   let mapsEmbedKey = '', mapDestination = null, mapOrigin = null, mapLastRendered = 0;
-  let bandCursor = -1, bandLive = false; // the Vexo band: declared early, the microphone code reads it
+  let bandCursor = -1, bandLive = false; // optional external audio device state
 
   el('apiInput').value = api || location.origin;
 
@@ -63,7 +63,8 @@
       const map = await call('/maps/config').catch(() => ({ embed_key: '' }));
       mapsEmbedKey = map.embed_key || '';
       online = true;
-      const cloud = s.vision.cloud_providers.length ? 'Gemini connected' : 'no cloud model (local answers only)';
+      const provider = s.vision.cloud_providers[0];
+      const cloud = provider ? `${provider[0].toUpperCase()}${provider.slice(1)} connected` : 'no cloud model (local answers only)';
       const detector = s.vision.detector.state === 'unavailable' ? 'detector unavailable' : 'on-device detector';
       const pay = s.payments.mode === 'stripe_test' ? 'Stripe test mode' : 'simulated payments';
       cloudVoice = Boolean(s.speech?.voice && s.speech.voice !== 'browser');
@@ -74,13 +75,13 @@
         const wb = s.wearable;
         const bPct = wb.battery?.percent != null ? ` · ${wb.battery.percent}%` : '';
         const trans = (wb.transport || 'ble').toUpperCase();
-        el('liveStatus').textContent += ` · Vexo band (${wb.band_name || 'Vexo-HACK-20'}${bPct} via ${trans})`;
-        if (el('webBandLabel')) el('webBandLabel').textContent = `${wb.band_name || 'Vexo-HACK-20'}${bPct} (${trans})`;
+        el('liveStatus').textContent += ` · external audio device (${wb.band_name || 'connected'}${bPct} via ${trans})`;
+        if (el('webBandLabel')) el('webBandLabel').textContent = `${wb.band_name || 'Connected device'}${bPct} (${trans})`;
         if (el('webBandDot')) el('webBandDot').className = 'dot';
         if (el('webBandWidget')) el('webBandWidget').style.display = 'flex';
       } else {
         if (el('webBandDot')) el('webBandDot').className = 'dot dot-bad';
-        if (el('webBandLabel')) el('webBandLabel').textContent = 'Vexo band not connected';
+        if (el('webBandWidget')) el('webBandWidget').style.display = 'none';
       }
       el('qrLink').href = api + '/pay/qr.png?item=Coffee&amount=4.50';
     } catch {
@@ -623,8 +624,11 @@
             // Narrate only when what is in view has changed and stayed changed.
             const key = [...new Set(scene.detections.filter(d => d.area >= 0.02).map(d => d.label))].sort().join(',');
             if (key === candidateKey) stable++; else { candidateKey = key; stable = 0; }
+            // Vision providers can rate-limit image calls. Keep the automatic
+            // narration useful without consuming the quota needed for an
+            // explicit "what is in front of me?" request.
             if (el('autoDescribe').checked && activeTab !== 'bridge' && key && stable >= 2 && key !== narratedKey
-                && Date.now() - narratedAt > 12000 && !busy && !isSpeaking()) {
+                && Date.now() - narratedAt > 30000 && !busy && !isSpeaking()) {
               narratedKey = key; narratedAt = Date.now();
               narrate(blob);
             }

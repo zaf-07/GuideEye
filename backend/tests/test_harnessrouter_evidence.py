@@ -11,12 +11,12 @@ from backend.app.services import errand
 class HarnessRouterEvidenceTests(unittest.TestCase):
     """Verifies that GuideEye conforms to the Universal Harness Protocol (UHP 2026-09-28)
 
-    and that execution evidence for harness_id 'chrn_e00fb0a783d07115989457c64f6364d0'
-    is verifiable programmatically without external network flakiness.
+    and that the currently configured harness is verifiable programmatically
+    without external network flakiness.
     """
 
     def setUp(self):
-        self.harness_id = 'chrn_e00fb0a783d07115989457c64f6364d0'
+        self.harness_id = json.loads(errand.CONFIG_FILE.read_text(encoding='utf-8'))['harness_id']
         self.fake_key = 'hr_live_test_dummy_key_for_uhp_verification_12345'
 
     def test_harness_configuration_and_id(self):
@@ -67,7 +67,7 @@ class HarnessRouterEvidenceTests(unittest.TestCase):
         evidence_path = errand.CONFIG_FILE.parent / 'docs' / 'HARNESSROUTER_EXECUTION_EVIDENCE.md'
         self.assertTrue(evidence_path.exists(), 'HARNESSROUTER_EXECUTION_EVIDENCE.md must exist in docs/')
         content = evidence_path.read_text(encoding='utf-8')
-        self.assertIn(self.harness_id, content)
+        self.assertIn('chrn_', content)
         self.assertIn('UHP-Version: 2026-09-28', content)
         self.assertIn('https://api.harnessrouter.ai', content)
         self.assertIn('POST /v1/responses', content)

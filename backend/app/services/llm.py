@@ -89,6 +89,8 @@ async def minimax(parts: list[dict], system: str = '', json_mode: bool = False, 
 
 async def groq(parts: list[dict], system: str = '', json_mode: bool = False, timeout: float = 10.0) -> str:
     """Call Groq's OpenAI-compatible API for text or image-aware requests."""
+    import httpx
+
     content: list[dict] = []
     has_image = False
     for part in parts:
