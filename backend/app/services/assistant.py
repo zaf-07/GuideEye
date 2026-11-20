@@ -818,6 +818,10 @@ class Assistant:
         )
         await self._errand(reply, session, text, request, image, mime,
                            wait_seconds=float(os.getenv('WEB_LOOKUP_WAIT_SECONDS', '8')))
+        if reply.get('errand', {}).get('status') == 'in_progress':
+            # The page polls this job automatically. Do not make a blind user
+            # remember a special status question or repeat their request.
+            reply['say'] = 'I am searching the web now. I will read the result automatically as soon as it is ready.'
 
     # ----- pay -----
 

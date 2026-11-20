@@ -92,11 +92,12 @@ class ErrandTests(unittest.TestCase):
         self.assertEqual(len(errands.started), 1)
 
     def test_web_research_returns_control_after_eight_seconds(self):
-        errands = FakeErrands([('completed', 'The current price is 10 dollars at Example Store.')])
+        errands = FakeErrands([('in_progress', '')])
         reply = run(self.assistant(errands).respond('s1', 'What is the price of this object?'))
         self.assertEqual(reply['intent'], 'web_lookup')
         self.assertEqual(errands.waited, [8.0])
         self.assertIn('Search the public web', errands.started[0]['text'])
+        self.assertIn('automatically', reply['say'])
 
     def test_yes_continues_the_same_task_and_no_drops_it(self):
         errands = FakeErrands([('completed', 'I drafted a reply. Should I go ahead?'), ('completed', 'The draft is ready.')])
