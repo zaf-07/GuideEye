@@ -1080,9 +1080,14 @@
   // ---------- Bridge: signs are read on this device and spoken; speech becomes text and fingerspelling ----------
   const signHandlers = {
     onUpdate: state => {
-      el('signLive').textContent = state.current
-        ? state.current + ' · ' + Math.round(state.confidence * 100) + '% sure'
-        : 'No sign in view';
+      // Signs are read as whole movements, so say what is happening while one is still going.
+      const sure = Math.round(state.confidence * 100) + '% sure';
+      let live = state.current ? state.current + ' · ' + sure : 'No sign in view';
+      if (state.mode === 'words' && state.handCount) {
+        if (state.phase === 'moving') live = state.current ? state.current + '? · following the movement' : 'Following the movement…';
+        else if (!state.current) live = 'Hand still · no sign';
+      }
+      el('signLive').textContent = live;
       if (state.handCount) {
         const context = [state.handCount + (state.handCount === 1 ? ' hand' : ' hands'), state.face].filter(Boolean).join(' · ');
         el('signLive').textContent += ' · ' + context;

@@ -12,6 +12,7 @@ jobs:
         with: { python-version: '3.12' }
       - run: pip install -r backend/requirements.txt
       - run: python -m unittest discover -s backend/tests -v
+      - run: node --test web/tests/*.test.cjs
       - run: python -m http.server 4173 --directory web & sleep 2; curl --fail http://localhost:4173/; curl --fail http://localhost:4173/app.js
   android:
     runs-on: ubuntu-24.04
