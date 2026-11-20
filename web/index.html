@@ -146,14 +146,14 @@
       <div class="container section-centered">
       <div class="section-head">
         <p class="eyebrow">How it works</p>
-        <h2 id="howTitle">The bracelet is your voice. The phone is your eyes.</h2>
+        <h2 id="howTitle">Your voice is the command. The phone is your eyes.</h2>
         <p>Safety-critical detection runs locally and privately. Reasoning and natural voice use the cloud.</p>
       </div>
       <ol class="steps">
         <li class="step">
           <span class="step-num">1</span>
           <h3>You talk</h3>
-          <p>Speak to the <strong>Vexo bracelet</strong> on your wrist. A <strong>chest-clipped phone</strong> camera watches the way ahead.</p>
+          <p>Speak through your phone or browser microphone. A <strong>chest-clipped phone</strong> camera watches the way ahead.</p>
         </li>
         <li class="step">
           <span class="step-num">2</span>
@@ -182,8 +182,8 @@
           <p class="live-status" role="status"><span class="dot dot-off" id="liveDot"></span><span id="liveStatus">Checking the GuideEye service…</span></p>
           <div class="band-widget" id="webBandWidget">
             <span class="dot dot-off" id="webBandDot"></span>
-            <span class="band-label" id="webBandLabel">Vexo band not connected</span>
-            <button class="btn btn-primary btn-small" id="webBandListenBtn" type="button">Connect band</button>
+            <span class="band-label" id="webBandLabel">External microphone not connected</span>
+            <button class="btn btn-primary btn-small" id="webBandListenBtn" type="button">Connect audio device</button>
           </div>
         </div>
 
@@ -356,11 +356,11 @@
 
             <div class="panel" role="tabpanel" id="panel-settings" aria-labelledby="tab-settings" hidden>
               <section class="settings-card" aria-labelledby="setBand">
-                <h3 id="setBand">Vexo band</h3>
+                <h3 id="setBand">External audio device</h3>
                 <p class="settings-status"><span class="dot dot-off" id="bandDot"></span><strong id="bandStatus" role="status">Not checked yet</strong></p>
-                <p class="hint" id="bandDetail">Double-tap the band so its light blinks blue, then check the connection.</p>
+                <p class="hint" id="bandDetail">Use your phone or browser microphone for voice input.</p>
                 <div class="row wrap">
-                  <button class="btn btn-primary btn-small" type="button" id="bandCheck">Connect the band</button>
+                  <button class="btn btn-primary btn-small" type="button" id="bandCheck">Check audio device</button>
                   <button class="btn btn-small" type="button" id="bandListen">Go to the assistant</button>
                 </div>
               </section>
@@ -422,7 +422,7 @@
           </div>
         </div>
 
-        <p class="live-privacy">Camera frames go to the GuideEye service on your own computer. When you ask a question, that single frame is also sent to Google Gemini for the answer. Directions send your location to OpenStreetMap services. Speech is recognised by your browser. Nothing is recorded. Payments are test-mode only.</p>
+        <p class="live-privacy">Camera frames go to the GuideEye service. When you ask a question, that single frame is sent to the configured cloud vision provider for the answer. Directions send your location to OpenStreetMap services. Speech is recognised by your browser. Nothing is recorded. Payments are test-mode only.</p>
       </div>
     </section>
 
@@ -472,7 +472,7 @@
 
       <div class="platform-grid" id="allDownloads" aria-label="All GuideEye downloads">
         <article class="platform-card" data-platform="android">
-          <div class="platform-head"><span class="os-icon os-android" aria-hidden="true"></span><div><h3>Android</h3><p>Phone + Vexo bracelet</p></div></div>
+          <div class="platform-head"><span class="os-icon os-android" aria-hidden="true"></span><div><h3>Android</h3><p>Phone + browser microphone</p></div></div>
           <a class="download-choice" href="https://github.com/zaf-07/GuideBand/releases/download/v0.1.0/GuideBand-Android.apk" download>
             <span><strong>Download APK</strong><small>Android 8.0+ · 12.9 MB</small></span><b aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 4v11M7 10.5l5 5 5-5M5.5 19.5h13"/></svg></b>
           </a>
@@ -516,7 +516,7 @@
       <img src="icon.svg" alt="" width="26" height="26">
       <span>GuideEye</span>
     </a>
-    <p>Built at VexoHacks · Y Combinator, San Francisco · Assistive companion, not a mobility aid</p>
+    <p>Built for The Big Hack Game · Assistive companion, not a mobility aid</p>
     <ul>
       <li><a href="app.html">Demo</a></li>
       <li><a href="https://github.com/zaf-07/GuideBand" rel="noopener">GitHub</a></li>

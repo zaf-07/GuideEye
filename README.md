@@ -2,9 +2,9 @@
 
 **The AI that sees, remembers, and acts for you.**
 
-GuideEye is a hands-free AI assistant for blind and low-vision people. A Vexo bracelet is the voice: the user just talks. A chest-clipped phone is the eyes. An agent keeps a private memory of what it saw and heard, and takes real actions — like paying — only after a spoken "yes".
+GuideEye is a hands-free AI assistant for blind and low-vision people. The user speaks through their phone or browser microphone, and a chest-clipped phone is the eyes. An agent keeps a private memory of what it saw and heard, and takes real actions — like paying — only after a spoken "yes".
 
-Built at VexoHacks (AI Wearables Hackathon, Y Combinator, San Francisco).
+Built for The Big Hack Game with HarnessRouter and the Universal Harness Protocol (UHP).
 
 > Prototype assistive technology. GuideEye is not a replacement for a white cane, guide dog, orientation and mobility training, emergency services or verified navigation instructions.
 
@@ -14,7 +14,7 @@ Today's vision apps for blind users live on a phone screen. You have to aim the 
 
 ## What it does
 
-- **See** — live hazard warnings spoken through the bracelet: "Chair ahead, left."
+- **See** — live hazard warnings spoken aloud: "Chair ahead, left."
 - **Remember** — ask later: "Where did I leave my keys?" or "What did that sign say?"
 - **Act** — "Buy me a coffee": it reads the item and price aloud and pays only after a spoken yes.
 - **Bridge** (stretch) — a deaf–blind bridge: sign language voiced aloud, speech shown as large captions.
@@ -25,11 +25,11 @@ Hybrid by design: safety-critical detection runs locally and privately; reasonin
 
 | Layer | Component | Role |
 | --- | --- | --- |
-| Wearables | Vexo bracelet | Microphone in, voice out, hands-free |
-| Wearables | Phone camera (chest clip) | The eyes |
+| Input | Phone or browser microphone | Hands-free spoken commands |
+| Camera | Phone camera (chest clip) | The eyes |
 | Local | Laptop (RTX 4050) | YOLO hazard detection, on-device |
-| Agent | Mastra agent | Tools: `see`, `recall`, `pay`; spoken yes before paying |
-| Services | Gemini Live | Vision and reasoning |
+| Agent | HarnessRouter UHP agent | Document errands with explicit confirmation |
+| Services | Groq | Vision and reasoning |
 | Services | ElevenLabs | Speech in and out |
 | Services | Memory store | Objects, text, places |
 | Services | Stripe | Test-mode payment |
