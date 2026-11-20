@@ -1,14 +1,12 @@
 import { AccessibilityInfo, Platform } from 'react-native';
-import { createAudioPlayer, type AudioPlayer } from 'expo-audio';
-import { File, Paths } from 'expo-file-system';
 import * as Speech from 'expo-speech';
 import { apiUrl } from '../api';
 import { Profile, hasVisionTrack } from '../state/profile';
 
 let speakingUntil = 0;
 let endedAt = 0;
-let cloudPlayer: AudioPlayer | null = null;
-let cloudFile: File | null = null;
+let cloudPlayer: any = null;
+let cloudFile: any = null;
 let webAudio: HTMLAudioElement | null = null;
 let finishTimer: ReturnType<typeof setTimeout> | null = null;
 let cloudRun = 0;
@@ -38,13 +36,13 @@ function stopCloudVoice() {
     }
   } else {
     try {
-      cloudPlayer?.pause();
-      cloudPlayer?.release();
+      cloudPlayer?.pause?.();
+      cloudPlayer?.release?.();
     } catch {
       /* best-effort */
     }
     cloudPlayer = null;
-    try { cloudFile?.delete(); } catch { /* cache cleanup is best-effort */ }
+    try { cloudFile?.delete?.(); } catch { /* cache cleanup is best-effort */ }
     cloudFile = null;
   }
 }
@@ -101,13 +99,27 @@ async function speakCloud(profile: Profile, message: string, run: number): Promi
       return false;
     }
 
-    const file = new File(Paths.cache, 'guideeye-elevenlabs.mp3');
+    // Dynamic safe loading of expo-audio and expo-file-system so missing/unlinked native modules never crash the app
+    let expoAudio: any = null;
+    let expoFs: any = null;
+    try {
+      expoAudio = require('expo-audio');
+      expoFs = require('expo-file-system');
+    } catch {
+      return false;
+    }
+
+    if (!expoAudio?.createAudioPlayer || !expoFs?.File || !expoFs?.Paths) {
+      return false;
+    }
+
+    const file = new expoFs.File(expoFs.Paths.cache, 'guideeye-elevenlabs.mp3');
     file.create({ overwrite: true });
     await file.write(bytes);
     cloudFile = file;
-    const player = createAudioPlayer(file.uri);
+    const player = expoAudio.createAudioPlayer(file.uri);
     cloudPlayer = player;
-    player.addListener?.('playbackStatusUpdate', (status) => {
+    player.addListener?.('playbackStatusUpdate', (status: any) => {
       if (status && (status.playbackState === 'finished' || (status.duration > 0 && status.currentTime >= status.duration))) {
         finished();
       }
