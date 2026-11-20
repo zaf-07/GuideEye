@@ -3,7 +3,12 @@
   const $ = s => document.querySelector(s);
   const store = { get: key => { try { return localStorage.getItem(key); } catch { return null; } }, set: (key, value) => { try { localStorage.setItem(key, value); } catch {} } };
   const requestedApi = new URLSearchParams(location.search).get('api');
-  let API = (requestedApi ?? store.get('guideband_api') ?? window.GUIDEEYE_API_URL ?? '').replace(/\/$/, '');
+  const publicApi = window.GUIDEEYE_API_URL || '';
+  const savedApi = store.get('guideband_api');
+  const staleLocalApi = /^https?:\/\/(localhost|127\.0\.0\.1)(?::\d+)?$/i.test(savedApi || '');
+  // A local address saved during development must never override the deployed
+  // API when this app is opened from GitHub Pages.
+  let API = (requestedApi ?? ((publicApi && staleLocalApi) ? publicApi : savedApi) ?? publicApi).replace(/\/$/, '');
 
   function showService(online, detail) {
     const dot = $('#serviceDot');
