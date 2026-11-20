@@ -81,7 +81,7 @@ REMEMBER = re.compile(r'^\W*(please )?remember\b|\bsave this\b|\bremember (this|
 PAY = re.compile(r'\b(buy|order|purchase|pay for|get me)\b')
 SCAN_PAY = re.compile(r'\b(pay|scan|buy)\b.*\b(this|that|it|code|qr|bill|total)\b|\bscan (and|to) pay\b|^\W*pay\W*$')
 RECALL = re.compile(
-    r'\bwhere (did|have)\b|\bwhere (is|are|was|were) my\b|\bwhat did\b|\b(did|have) you seen?\b'
+    r'\bwhere (did|have)\b|\bwhere (is|are|was|were) (?:my|the|a|an)\b|\bwhat did\b|\b(did|have) you seen?\b'
     r'|\bdo you remember\b|\blast (saw|seen)\b|\bwhat (do|did) you remember\b'
     r'|\bwhere (was|have) i\b|\bwhere did i go\b|\bwhat (did|have) i (ask|asked|say|said)\b'
 )
@@ -266,6 +266,18 @@ def message_body(text: str) -> str:
     return '' if re.search(r'\bwhere i am\b|\bmy location\b', body, re.IGNORECASE) else body
 
 
+def remembered_text(text: str) -> str:
+    """Return the dictated part of a text-only memory request.
+
+    A visual request such as "remember this" still needs a frame, but a user
+    should be able to dictate a fact without turning on the camera.
+    """
+    value = re.sub(r'^\W*(?:please\s+)?remember\b(?:\s+(?:this|that))?[\s,:-]*', '', text,
+                   flags=re.IGNORECASE)
+    value = re.sub(r'^\W*save\s+this\b[\s,:-]*', '', value, flags=re.IGNORECASE)
+    return value.strip(' .,!')
+
+
 class Assistant:
     def __init__(self, memory: Memory, orders: Orders, detector=None, navigator=None, place_name=None,
                  read_frame=None, send_whatsapp=None, send_desktop=None, geocode=None,
@@ -396,6 +408,13 @@ class Assistant:
         elif intent == 'recall':
             answer = await self.memory.recall(text)
             reply.update(say=answer['text'], provider=answer['provider'])
+        elif intent == 'remember' and image is None:
+            note_text = remembered_text(text)
+            if note_text:
+                self.memory.add_note('note', note_text)
+                reply['say'] = f'I will remember: {note_text}.'
+            else:
+                reply['say'] = 'Please tell me what to remember, or turn on the camera so I can remember what is in view.'
         elif intent == 'where_am_i':
             await self._where(reply, image, mime, location)
         elif intent == 'place_set':

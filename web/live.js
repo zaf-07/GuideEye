@@ -63,7 +63,8 @@
       const map = await call('/maps/config').catch(() => ({ embed_key: '' }));
       mapsEmbedKey = map.embed_key || '';
       online = true;
-      const cloud = s.vision.cloud_providers.length ? 'Gemini connected' : 'no cloud model (local answers only)';
+      const provider = s.vision.cloud_providers[0];
+      const cloud = provider ? `${provider[0].toUpperCase()}${provider.slice(1)} connected` : 'no cloud model (local answers only)';
       const detector = s.vision.detector.state === 'unavailable' ? 'detector unavailable' : 'on-device detector';
       const pay = s.payments.mode === 'stripe_test' ? 'Stripe test mode' : 'simulated payments';
       cloudVoice = Boolean(s.speech?.voice && s.speech.voice !== 'browser');

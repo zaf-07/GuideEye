@@ -100,6 +100,15 @@ class MemoryTests(NoCloud):
         self.assertEqual(answer['provider'], 'local')
         self.assertIn('kitchen counter', answer['text'])
 
+    def test_can_remember_a_dictated_fact_without_the_camera(self):
+        memory = Memory(':memory:')
+        assistant = Assistant(memory, Orders())
+        saved = run(assistant.respond('s', 'Please remember the blue umbrella is in the entry closet'))
+        self.assertEqual(saved['intent'], 'remember')
+        self.assertIn('blue umbrella', saved['say'])
+        recalled = run(assistant.respond('s', 'Do you remember the blue umbrella?'))
+        self.assertIn('entry closet', recalled['say'])
+
     def test_unknown_things_are_not_invented(self):
         self.assertEqual(Memory(':memory:').local_answer('Where is my wallet?'), 'I have not seen that yet.')
 
