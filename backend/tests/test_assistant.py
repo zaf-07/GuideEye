@@ -48,6 +48,9 @@ class RouteTests(unittest.TestCase):
             'Open WhatsApp': 'open_app',
             'I want to make a new contact': 'contact_add',
             'Can you add a phone contact': 'contact_add',
+            "Add Mom's phone number": 'contact_add',
+            'Make a phone call': 'call',
+            'Transfer money to Mom': 'transfer',
             '1600 Amphitheatre Parkway Mountain View': 'navigate',
             'What is the weather in Seattle?': 'weather',
             'What is the price of this object?': 'web_lookup',
@@ -80,6 +83,13 @@ class ContactConversationTests(NoCloud):
         assistant = Assistant(memory, Orders())
         saved = run(assistant.respond('contact', 'add a new contact named Sam number 14155550112'))
         self.assertEqual((saved['intent'], saved['contact']['name']), ('contact_saved', 'Sam'))
+
+    def test_spoken_phone_number_request_keeps_the_name(self):
+        memory = Memory(':memory:')
+        assistant = Assistant(memory, Orders())
+        first = run(assistant.respond('contact', "Please add Mom's phone number"))
+        self.assertEqual(first['intent'], 'contact_waiting')
+        self.assertIn("Mom's WhatsApp number", first['say'])
 
 
 class MemoryTests(NoCloud):
@@ -202,6 +212,15 @@ class AssistantTests(NoCloud):
         called = run(assistant.respond('s', 'Yes'))
         self.assertEqual(called['open_url'], 'tel:14155550111')
         self.assertEqual(called['say'], 'Calling Alex.')
+
+    def test_incomplete_call_and_transfer_are_handled_without_a_language_model(self):
+        assistant = self.make()
+        call = run(assistant.respond('s', 'Make a phone call'))
+        self.assertEqual(call['intent'], 'call')
+        self.assertIn('Who would you like to call?', call['say'])
+        transfer = run(assistant.respond('s', 'Transfer money to Mom'))
+        self.assertEqual(transfer['intent'], 'transfer')
+        self.assertIn('not connected', transfer['say'])
 
     def test_open_app_uses_allowlisted_url(self):
         reply = run(self.make().respond('s', 'Open WhatsApp'))

@@ -133,10 +133,13 @@ PLACE_GO = re.compile(
     r'\b(?:take|get|guide|walk|bring|lead) me (?:to )?(?:my )?(home|house|work|office|school|dorm)\b'
     r'|\b(?:directions?|route|way|go|going|head|navigate) (?:to )?(?:my )?(home|house|work|office|school|dorm)\b'
 )
-CALL = re.compile(r'\b(?:call|dial|phone)\s+(?:my\s+)?([a-z][a-z0-9 .-]{1,39})\b', re.IGNORECASE)
+CALL = re.compile(r'\b(?:call|dial|phone)(?!\s+call\b)\s+(?:my\s+)?([a-z][a-z0-9 .-]{1,39})\b', re.IGNORECASE)
+CALL_REQUEST = re.compile(r'\b(?:make|place|start)\s+(?:a\s+)?(?:phone\s+)?call\b|\b(?:i want|i need|help me)\s+(?:to\s+)?call\b', re.IGNORECASE)
+TRANSFER = re.compile(r'\btransfer\b|\b(?:send)\s+(?:money|cash|funds|dollars?)\b', re.IGNORECASE)
 CONTACT_ADD = re.compile(
     r'\b(?:add|create|make|save|new)\s+(?:a\s+)?(?:new\s+)?(?:(?:phone|whatsapp)\s+)?contact\b'
-    r'|\b(?:i want|i need)\s+(?:to\s+)?(?:add|create|make)\s+(?:a\s+)?(?:new\s+)?(?:(?:phone|whatsapp)\s+)?contact\b', re.IGNORECASE)
+    r'|\b(?:i want|i need)\s+(?:to\s+)?(?:add|create|make)\s+(?:a\s+)?(?:new\s+)?(?:(?:phone|whatsapp)\s+)?contact\b'
+    r'|\b(?:add|save|create)\s+(?:my\s+)?[a-z][a-z .\'-]{0,35}(?:\'s)?\s+(?:phone|mobile|whatsapp)\s+number\b', re.IGNORECASE)
 OPEN_APP = re.compile(r'^\W*(?:open|launch|start)\s+(?:the\s+)?(whatsapp|messages|maps|facetime|calendar)\b', re.IGNORECASE)
 BRIDGE = re.compile(r'\bbridge\b')
 NAV = re.compile(
@@ -351,9 +354,13 @@ MAX_SESSIONS = 500
 def contact_name(text: str) -> str:
     """Find an optional name in 'add a contact named Sam' without mistaking command words for a name."""
     match = re.search(r'\b(?:named|name is|for)\s+([a-z][a-z .\'-]{0,39})', text, re.IGNORECASE)
+    if match:
+        value = re.split(r'\b(?:number|phone|whatsapp)\b|\d', match.group(1), maxsplit=1, flags=re.IGNORECASE)[0]
+        return value.strip(" .,'-").title()
+    match = re.search(r'\b(?:add|save|create)\s+(?:my\s+)?([a-z][a-z .\'-]{0,35}?)(?:\'s)?\s+(?:phone|mobile|whatsapp)\s+number\b', text, re.IGNORECASE)
     if not match:
         return ''
-    value = re.split(r'\b(?:number|phone|whatsapp)\b|\d', match.group(1), maxsplit=1, flags=re.IGNORECASE)[0]
+    value = match.group(1)
     return value.strip(" .,'-").title()
 
 
@@ -387,8 +394,10 @@ def route(text: str, has_pending: bool = False, navigating: bool = False) -> str
         return 'where_am_i'
     if MESSAGE.search(value):
         return 'message'
-    if CALL.search(value):
+    if CALL.search(value) or CALL_REQUEST.search(value):
         return 'call'
+    if TRANSFER.search(value):
+        return 'transfer'
     if OPEN_APP.search(value):
         return 'open_app'
     if NAV.search(value) or NEARBY_PLACE.search(value) or DIRECT_ADDRESS.match(value):
@@ -608,6 +617,8 @@ class Assistant:
         elif intent == 'call_waiting':
             reply['confirm'] = f'Call {call["name"]}?'
             reply['say'] = f'I am waiting for a yes or no before calling {call["name"]}.'
+        elif intent == 'transfer':
+            reply['say'] = 'Bank transfers are not connected to GuideEye, so I will not move money. I can prepare a payment only after you confirm a price.'
         elif intent == 'contact_add':
             self._start_contact(reply, session, text)
         elif intent == 'contact_continue':
@@ -1075,7 +1086,10 @@ class Assistant:
 
     async def _prepare_call(self, reply: dict, session: str, text: str) -> None:
         match = CALL.search(text)
-        name = match.group(1).strip() if match else ''
+        name = re.sub(r'^(?:to|the)\s+', '', match.group(1).strip(), flags=re.IGNORECASE) if match else ''
+        if not name:
+            reply['say'] = 'Who would you like to call? Say call, followed by a saved contact name.'
+            return
         contact = self._named_contact(session, name)
         if contact is None:
             reply['say'] = f'I do not have {name or "that person"} in your contacts. Add them in the Family tab first.'
