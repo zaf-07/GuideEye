@@ -922,6 +922,29 @@
     if (r) { r.onend = null; r.abort(); }
     micState('Microphone off', 'off');
   }
+  function clearPendingSpeech() {
+    clearTimeout(interimTimer);
+    finalSpeechParts = [];
+    clearTimeout(heldTimer);
+    heldPiece = '';
+  }
+  function updateMicPower() {
+    const on = el('micToggle').checked;
+    const button = el('micPower');
+    button.textContent = on ? 'Turn microphone off' : 'Turn microphone on';
+    button.setAttribute('aria-pressed', String(on));
+  }
+  function setMicrophoneEnabled(on) {
+    el('micToggle').checked = on;
+    clearPendingSpeech();
+    if (on) {
+      micBlocked = false;
+      startMic();
+    } else {
+      stopMic();
+    }
+    updateMicPower();
+  }
   // ----- A chosen microphone (the Vexo bracelet, a headset…) -----
   // The browser's own speech recognition can only use the default microphone, so audio from a
   // chosen one is cut into sentences here by loudness and transcribed by the service (Deepgram).
@@ -1037,14 +1060,18 @@
     stopDeviceMic();
     micState('Microphone off', 'off');
     if (el('micToggle').checked) startMic();
+    updateMicPower();
   };
 
   if (!Recognition) {
     el('micToggle').checked = false;
     el('micToggle').disabled = true;
+    el('micPower').disabled = true;
     micState('Voice input isn’t available in this browser — type instead, or use Chrome', 'off');
   } else {
-    el('micToggle').onchange = () => { micBlocked = false; el('micToggle').checked ? startMic() : stopMic(); };
+    el('micToggle').onchange = () => setMicrophoneEnabled(el('micToggle').checked);
+    el('micPower').onclick = () => setMicrophoneEnabled(!el('micToggle').checked);
+    updateMicPower();
     // A first click anywhere in the demo is enough for the browser to allow the microphone.
     el('live').addEventListener('click', () => { if (micBlocked) { micBlocked = false; startMic(); } });
     startMic();
@@ -1295,6 +1322,7 @@
   const SHORT_REQUEST = /^(?:yes|yeah|yep|no|nope|okay|ok|cancel|stop|help|pay|pay this|buy this|scan this|read this|read text|read the text|remember this|take me home|take me back|go back|go home|where am i|what is this|whats this|what's this|stop navigation|zoom in|zoom out|reset zoom|forget everything|thank you|thanks)\b[\s.!?]*$|^(?:yes|yeah|yep|no|nope|okay|ok|cancel|stop)\b.{0,24}$/i;
   let heldPiece = '', heldTimer = null, awaitingAnswer = false;
   function bandPiece(text) {
+    if (!el('micToggle').checked) return;
     clearTimeout(heldTimer);
     const whole = (heldPiece + ' ' + text).trim();
     heldPiece = '';
@@ -1338,7 +1366,7 @@
     el('bandDetail').textContent = bandLive
       ? 'Battery ' + (band.battery ?? '?') + '% · the connection stays open, just speak into the band.'
       : 'Double-tap the band so its light blinks blue and keep it close. It connects by itself and stays connected.';
-    if (bandLive && !was) {
+    if (bandLive && !was && el('micToggle').checked) {
       const r = recognizer; recognizer = null;
       if (r) { r.onend = null; r.abort(); }
       stopDeviceMic();
@@ -1356,6 +1384,9 @@
       showBandLive(heard.band);
       if (bandCursor < 0) { bandCursor = heard.last; return; } // ignore anything said before this page opened
       bandCursor = heard.last;
+      // Keep the hardware state visible but discard every received fragment
+      // while the user has turned voice input off.
+      if (!el('micToggle').checked) return;
       for (const item of heard.items) bandPiece(item.text);
     } catch {}
   }, 700);
@@ -1392,9 +1423,7 @@
     try {
       const probe = await navigator.mediaDevices.getUserMedia({ audio: true });
       probe.getTracks().forEach(track => track.stop());
-      micBlocked = false;
-      el('micToggle').checked = true;
-      startMic();
+      setMicrophoneEnabled(true);
     } catch {}
     refreshPermissions();
   };
