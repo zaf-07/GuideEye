@@ -218,7 +218,7 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(bridge.parse_reading('not json'), {'text': '', 'confidence': 0.0})
 
     def test_default_model_is_the_fast_one(self):
-        with mock.patch.dict(os.environ, {'GEMINI_MODEL': ''}):
+        with mock.patch.dict(os.environ, {'GEMINI_MODEL': '', 'GROQ_API_KEY': '', 'MINIMAX_API_KEY': ''}):
             os.environ.pop('GEMINI_MODEL')
             self.assertEqual(llm.model(), 'gemini-flash-lite-latest')
 
