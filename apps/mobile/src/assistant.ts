@@ -16,6 +16,8 @@ export type AssistantReply = {
   navigating: boolean;
   timer: { seconds: number; label: string } | null;
   warnings: string[];
+  provider?: string | null;
+  errand?: { id: string; status: string } | null;
 };
 
 export type RouteUpdate = {

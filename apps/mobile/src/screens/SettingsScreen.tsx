@@ -10,6 +10,7 @@ import { currentCoordinates } from '../useAssistant';
 import { onSyncHealth, remoteStatus, syncHealth, type SyncHealth } from '../memory';
 import { useProfile } from '../state/ProfileContext';
 import { hasHearingTrack, hasVisionTrack, IMPAIRMENT_LABEL } from '../state/profile';
+import { testVoice } from '../lib/announce';
 import { colors, spacing } from '../theme/tokens';
 
 function Row({
@@ -326,6 +327,14 @@ export function SettingsScreen() {
               <Chip key={r} label={`${r}×`} active={profile.speechRate === r} onPress={() => patch({ speechRate: r })} />
             ))}
           </View>
+          <Button
+            label="Test natural voice (ElevenLabs)"
+            tone="glass"
+            onPress={() => testVoice(profile, 'Hello! This is GuideEye speaking with ElevenLabs natural voice.')}
+            hint="Plays a sample phrase to test on-device speech playback."
+            style={{ marginTop: spacing.sm }}
+            icon={<Ionicons name="volume-high-outline" size={20} color={colors.lime} />}
+          />
         </GlassCard>
       ) : null}
 

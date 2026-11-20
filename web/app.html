@@ -361,10 +361,21 @@
           <p class="dialogue-heard" id="heardText">Try: “Help me walk to Safeway” or “What’s in front of me?”</p>
           <p class="dialogue-reply" id="replyText">I am ready. Tap the microphone or choose an action to begin.</p>
         </div>
+
+        <div id="harnessBadgeRow" style="display:flex; align-items:center; justify-content:center; gap:0.5rem; margin-top:0.75rem; font-size:0.82rem; color:var(--muted);">
+          <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#b7ff56; box-shadow:0 0 8px #b7ff56;"></span>
+          <span>Complex document errands routed via <b>HarnessRouter UHP</b> (<code>chrn_e00fb0...</code>)</span>
+          <a href="https://github.com/legiaphat/GuideEye/blob/main/docs/HARNESSROUTER_EXECUTION_EVIDENCE.md" target="_blank" style="color:var(--accent); text-decoration:underline; margin-left:0.25rem;">View Execution Evidence</a>
+        </div>
       </section>
 
       <!-- Quick Actions -->
       <section class="action-grid" aria-label="Quick actions">
+        <button class="action-btn" data-command="Explain this clinic bill and tell me what to do" type="button" style="border: 1px solid rgba(183, 255, 86, 0.4);">
+          <span class="icon">📄</span>
+          <b>Errand Agent</b>
+          <small>HarnessRouter UHP</small>
+        </button>
         <button class="action-btn" data-command="In 30 minutes, help me walk to Safeway" type="button">
           <span class="icon">↗</span>
           <b>Go somewhere</b>

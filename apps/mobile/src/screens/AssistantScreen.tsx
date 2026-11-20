@@ -29,6 +29,7 @@ function distanceLabel(meters: number) {
 const SUGGESTIONS = [
   "What's in front of me?",
   'Read the text',
+  'Explain this letter (HarnessRouter)',
   'Remember this',
   'Where are my keys?',
   'Where am I?',
@@ -176,6 +177,14 @@ export function AssistantScreen() {
           <Text variant="section" accessibilityLiveRegion="polite">
             {reply.say}
           </Text>
+          {(reply.provider === 'harnessrouter' || reply.errand) ? (
+            <View style={styles.harnessBadge}>
+              <Ionicons name="flash" size={13} color={colors.lime} />
+              <Text variant="caption" style={{ color: colors.lime, fontWeight: '700' }}>
+                HarnessRouter UHP Agent · chrn_e00fb0...
+              </Text>
+            </View>
+          ) : null}
           {reply.confirm ? (
             <View style={styles.actions}>
               <Button label="Yes" tone="lime" busy={busy} onPress={() => void ask('yes')} hint={reply.confirm} />
@@ -256,6 +265,17 @@ const styles = StyleSheet.create({
     backgroundColor: colors.lime,
   },
   actions: { gap: spacing.sm, marginTop: spacing.xs },
+  harnessBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(183, 255, 86, 0.12)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    marginTop: 8,
+    alignSelf: 'flex-start',
+  },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   input: {
     minHeight: HIT,

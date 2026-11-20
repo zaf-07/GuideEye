@@ -119,6 +119,7 @@ export default function DeafBlindBridgeScreen() {
   const [spelled, setSpelled] = useState('');
   const [cameraFacing, setCameraFacing] = useState<'front' | 'back'>('front');
   const [isListeningMic, setIsListeningMic] = useState(false);
+  const [interimCaption, setInterimCaption] = useState('');
   const cameraRef = useRef<CameraView>(null);
   const nativeDeafRole = Platform.OS !== 'web' && (role === 'deaf' || role === 'both');
   const { result: nativeSignResult, state: nativeSignState } = useVisionLoop(
@@ -313,13 +314,13 @@ export default function DeafBlindBridgeScreen() {
     }
   };
 
-  const handleDeafSigned = (text: string) => {
+  const handleDeafSigned = useCallback((text: string) => {
     const phrase = text.trim();
     if (!phrase) return;
     // The listener is at this device only when both people share it.
     if (roleRef.current === 'both') speak(phrase);
     void send('deaf', phrase);
-  };
+  }, [speak]);
 
   // Native phones use the configured API's phrase decoder. The browser keeps
   // its on-device word engine, and both paths retain quick-sign fallback.
@@ -327,26 +328,35 @@ export default function DeafBlindBridgeScreen() {
     const phrase = nativeSignResult?.should_speak ? nativeSignResult.speech.trim() : '';
     if (!phrase) return;
     handleDeafSigned(phrase);
-  }, [nativeSignResult?.scene_key, nativeSignResult?.should_speak, nativeSignResult?.speech]);
+  }, [handleDeafSigned, nativeSignResult?.scene_key, nativeSignResult?.should_speak, nativeSignResult?.speech]);
 
   const handleBlindReply = (text: string) => {
     if (!text.trim()) return;
+    setInterimCaption('');
     setCustomReply('');
     if (roleRef.current === 'blind') speak('Sent.', 1.1);
     void send('blind', text);
   };
 
   useSpeechRecognitionEvent('start', () => setIsListeningMic(true));
-  useSpeechRecognitionEvent('end', () => setIsListeningMic(false));
+  useSpeechRecognitionEvent('end', () => {
+    setIsListeningMic(false);
+    setInterimCaption('');
+  });
   useSpeechRecognitionEvent('error', (event) => {
     setIsListeningMic(false);
+    setInterimCaption('');
     if (event.error !== 'aborted' && event.error !== 'no-speech') {
       setSetupError('Voice reply could not start. Use a quick reply or type your message.');
     }
   });
   useSpeechRecognitionEvent('result', (event) => {
-    if (!event.isFinal) return;
-    const transcript = event.results[0]?.transcript.trim();
+    const transcript = event.results[0]?.transcript?.trim() ?? '';
+    if (!event.isFinal) {
+      if (transcript) setInterimCaption(transcript);
+      return;
+    }
+    setInterimCaption('');
     if (transcript) handleBlindReply(transcript);
   });
 
@@ -406,7 +416,7 @@ export default function DeafBlindBridgeScreen() {
         setSetupError('Microphone and speech-recognition permission are needed for voice replies.');
         return;
       }
-      ExpoSpeechRecognitionModule.start({ lang: 'en-US', interimResults: false, continuous: false });
+      ExpoSpeechRecognitionModule.start({ lang: 'en-US', interimResults: true, continuous: false });
     } catch {
       setIsListeningMic(false);
       setSetupError('Voice reply could not start. Use a quick reply or type your message.');
@@ -707,9 +717,21 @@ export default function DeafBlindBridgeScreen() {
                 </View>
 
                 {(displayMode === 'text' || displayMode === 'both') && (
-                  <Text style={s.giantText} accessibilityLiveRegion="assertive">
-                    {lastBlind ? lastBlind.text.toUpperCase() : 'WAITING FOR A REPLY'}
-                  </Text>
+                  interimCaption ? (
+                    <View style={s.interimContainer}>
+                      <View style={s.interimHeader}>
+                        <View style={s.interimLiveDot} />
+                        <Text style={s.interimTag}>LIVE CAPTION (SPEAKING NOW):</Text>
+                      </View>
+                      <Text style={[s.giantText, s.giantTextInterim]} accessibilityLiveRegion="assertive">
+                        {interimCaption.toUpperCase()}
+                      </Text>
+                    </View>
+                  ) : (
+                    <Text style={s.giantText} accessibilityLiveRegion="assertive">
+                      {lastBlind ? lastBlind.text.toUpperCase() : 'WAITING FOR A REPLY'}
+                    </Text>
+                  )
                 )}
                 {(displayMode === 'avatar' || displayMode === 'both') && lastBlindAsl && lastBlindAsl.tokens.length > 0 && (
                   <View style={s.bridgeSignPlayerBox}>
@@ -788,9 +810,21 @@ export default function DeafBlindBridgeScreen() {
                 </View>
 
                 {(displayMode === 'text' || displayMode === 'both') && (
-                  <Text style={s.giantText} accessibilityRole="text" accessibilityLiveRegion="assertive">
-                    {lastBlind ? lastBlind.text.toUpperCase() : 'PRESS A REPLY BELOW OR SPEAK'}
-                  </Text>
+                  interimCaption ? (
+                    <View style={s.interimContainer}>
+                      <View style={s.interimHeader}>
+                        <View style={s.interimLiveDot} />
+                        <Text style={s.interimTag}>LIVE CAPTION (SPEAKING NOW):</Text>
+                      </View>
+                      <Text style={[s.giantText, s.giantTextInterim]} accessibilityRole="text" accessibilityLiveRegion="assertive">
+                        {interimCaption.toUpperCase()}
+                      </Text>
+                    </View>
+                  ) : (
+                    <Text style={s.giantText} accessibilityRole="text" accessibilityLiveRegion="assertive">
+                      {lastBlind ? lastBlind.text.toUpperCase() : 'PRESS A REPLY BELOW OR SPEAK'}
+                    </Text>
+                  )
                 )}
                 {(displayMode === 'avatar' || displayMode === 'both') && lastBlindAsl && lastBlindAsl.tokens.length > 0 && (
                   <View style={s.bridgeSignPlayerBox}>
@@ -1172,6 +1206,30 @@ const s = StyleSheet.create({
     fontWeight: '900',
     lineHeight: 32,
     letterSpacing: 0.5,
+  },
+  giantTextInterim: {
+    color: '#00E5FF',
+  },
+  interimContainer: {
+    gap: 4,
+  },
+  interimHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 2,
+  },
+  interimLiveDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#00E5FF',
+  },
+  interimTag: {
+    color: '#00E5FF',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.6,
   },
   bridgeSignPlayerBox: {
     marginTop: 14,

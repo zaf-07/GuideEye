@@ -1,3 +1,11 @@
 {
-  "harness_id": "chrn_e00fb0a783d07115989457c64f6364d0"
+  "harness_id": "chrn_e00fb0a783d07115989457c64f6364d0",
+  "name": "GuideEye Accessible Errand Agent",
+  "protocol": "UHP",
+  "protocol_version": "2026-09-28",
+  "endpoint": "https://api.harnessrouter.ai",
+  "base": "universal",
+  "core_action": "document_and_errand_action_planning",
+  "description": "Multi-step reasoning agent for blind wearers: processes complex physical documents, medical discharge summaries, invoices, letters, and forms into clear spoken action items without guessing.",
+  "evidence_doc": "docs/HARNESSROUTER_EXECUTION_EVIDENCE.md"
 }

@@ -199,6 +199,34 @@ A normal APK with broad permissions cannot silently control every app. Android i
 - Money never moves without a spoken yes; payments run in Stripe test mode.
 - Object detection is not distance measurement: GuideEye says where something is in view, not how far away it is.
 
+## Judging & Evidence Documentation
+
+| Section | Link | Purpose |
+| :--- | :--- | :--- |
+| **HarnessRouter / UHP Evidence** | [docs/HARNESSROUTER_EXECUTION_EVIDENCE.md](docs/HARNESSROUTER_EXECUTION_EVIDENCE.md) | Verifiable UHP execution traces, golden HTTP payloads, and core action proof (`chrn_e00fb0...`) |
+| **Distribution & Social Post** | [docs/DISTRIBUTION_AND_POST.md](docs/DISTRIBUTION_AND_POST.md) | Corrected post with `#HarnessRouter #UHP #BigHackGame #BeatCal` & `@HarnessRouter` tag |
+| **Commercial Commitment (LOI)** | [docs/COMMERCIAL_LOI_AND_REVENUE.md](docs/COMMERCIAL_LOI_AND_REVENUE.md) | Executed 10-seat paid pilot LOI ($1,470 commitment) for event page revenue field |
+| **Event Forum Build Log** | [docs/EVENT_FORUM_BUILD_LOG.md](docs/EVENT_FORUM_BUILD_LOG.md) | Technical build log for the Top-5 Build Log Prize ($1,000 category) |
+| **Sustainability & Economics** | [docs/SUSTAINABILITY_AND_UNIT_ECONOMICS.md](docs/SUSTAINABILITY_AND_UNIT_ECONOMICS.md) | Operating cost breakdown ($2.40/user/mo), pricing tiers, and adoption roadmap |
+
+## Testing & Verification
+
+Run the automated verification suite:
+
+```bash
+# Verify HarnessRouter UHP execution evidence
+python3 scripts/verify_harnessrouter.py
+
+# Run all 181 backend tests (compatible with Python 3.9 - 3.13)
+npm test
+
+# Run all 83 mobile unit tests (Bridge, voice, ASL gloss translation, memory)
+npm run mobile:test
+
+# Verify mobile TypeScript types
+npm run mobile:typecheck
+```
+
 ## Test
 
 ```bash

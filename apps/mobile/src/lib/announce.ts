@@ -9,6 +9,7 @@ let speakingUntil = 0;
 let endedAt = 0;
 let cloudPlayer: AudioPlayer | null = null;
 let cloudFile: File | null = null;
+let webAudio: HTMLAudioElement | null = null;
 let finishTimer: ReturnType<typeof setTimeout> | null = null;
 let cloudRun = 0;
 
@@ -25,11 +26,27 @@ function finished() {
 }
 
 function stopCloudVoice() {
-  cloudPlayer?.pause();
-  cloudPlayer?.release();
-  cloudPlayer = null;
-  try { cloudFile?.delete(); } catch { /* cache cleanup is best-effort */ }
-  cloudFile = null;
+  if (Platform.OS === 'web') {
+    if (webAudio) {
+      try {
+        webAudio.pause();
+        webAudio.src = '';
+      } catch {
+        /* best-effort */
+      }
+      webAudio = null;
+    }
+  } else {
+    try {
+      cloudPlayer?.pause();
+      cloudPlayer?.release();
+    } catch {
+      /* best-effort */
+    }
+    cloudPlayer = null;
+    try { cloudFile?.delete(); } catch { /* cache cleanup is best-effort */ }
+    cloudFile = null;
+  }
 }
 
 function speakNative(profile: Profile, message: string, opts?: { urgent?: boolean }) {
@@ -62,16 +79,42 @@ async function speakCloud(profile: Profile, message: string, run: number): Promi
     if (!bytes.length || run !== cloudRun) return false;
 
     stopCloudVoice();
+
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined' && typeof window.Audio !== 'undefined') {
+        const blob = new Blob([bytes], { type: 'audio/mpeg' });
+        const url = URL.createObjectURL(blob);
+        const audio = new window.Audio(url);
+        webAudio = audio;
+        audio.onended = () => {
+          URL.revokeObjectURL(url);
+          finished();
+        };
+        audio.onerror = () => {
+          URL.revokeObjectURL(url);
+          finished();
+        };
+        await audio.play();
+        finishTimer = setTimeout(finished, estimateMs(message, profile.speechRate));
+        return true;
+      }
+      return false;
+    }
+
     const file = new File(Paths.cache, 'guideeye-elevenlabs.mp3');
     file.create({ overwrite: true });
     await file.write(bytes);
     cloudFile = file;
-    cloudPlayer = createAudioPlayer(file.uri);
-    cloudPlayer.play();
+    const player = createAudioPlayer(file.uri);
+    cloudPlayer = player;
+    player.addListener?.('playbackStatusUpdate', (status) => {
+      if (status && (status.playbackState === 'finished' || (status.duration > 0 && status.currentTime >= status.duration))) {
+        finished();
+      }
+    });
+    player.play();
 
-    // The native player owns the real audio duration. This conservative timer
-    // only releases the speech-recognition guard if a platform fails to emit
-    // a completion event for a short generated reply.
+    // Conservative fallback timer in case platform omits completion event
     finishTimer = setTimeout(finished, estimateMs(message, profile.speechRate));
     return true;
   } catch {
@@ -81,7 +124,7 @@ async function speakCloud(profile: Profile, message: string, run: number): Promi
 
 /**
  * One announcement path for the whole app.
- *  - Blind / low-vision mode uses the configured GuideEye voice.
+ *  - Blind / low-vision mode uses the configured GuideEye voice (ElevenLabs cloud, native fallback).
  *  - Other modes only enqueue the message for an enabled screen reader.
  * Keeping these paths exclusive avoids two voices speaking over one another.
  */
@@ -100,6 +143,11 @@ export function announce(profile: Profile, message: string, opts?: { urgent?: bo
   } else if (Platform.OS !== 'web') {
     AccessibilityInfo.announceForAccessibility(message);
   }
+}
+
+/** Explicitly triggers a test announcement to verify on-device ElevenLabs voice playback. */
+export function testVoice(profile: Profile, sampleText = 'Hello! This is GuideEye speaking with ElevenLabs natural voice.') {
+  announce(profile, sampleText);
 }
 
 export function stopSpeaking() {

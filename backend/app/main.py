@@ -8,6 +8,7 @@ import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Optional, Union
 from uuid import uuid4
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile, WebSocket, WebSocketDisconnect
@@ -116,8 +117,8 @@ async def vision_analyze(
     question: str = Form('', max_length=300),
     describe: bool = Form(True),
     remember: bool = Form(False),
-    lat: float | None = Form(None),
-    lon: float | None = Form(None),
+    lat: Optional[float] = Form(None),
+    lon: Optional[float] = Form(None),
 ):
     """One camera frame in, spoken-ready text out. The frame is never stored.
 
@@ -154,9 +155,9 @@ async def vision_analyze(
 async def assistant_respond(
     text: str = Form(..., min_length=1, max_length=300),
     session: str = Form('default', max_length=64),
-    image: UploadFile | None = File(None),
-    lat: float | None = Form(None),
-    lon: float | None = Form(None),
+    image: Optional[UploadFile] = File(None),
+    lat: Optional[float] = Form(None),
+    lon: Optional[float] = Form(None),
 ):
     """One spoken sentence in, one spoken reply out. `image` is the current camera frame, if any."""
     started = time.monotonic()
@@ -173,7 +174,7 @@ async def assistant_respond(
 # ---------- Remember ----------
 
 @app.post('/memory/observe')
-async def memory_observe(image: UploadFile = File(...), lat: float | None = Form(None), lon: float | None = Form(None)):
+async def memory_observe(image: UploadFile = File(...), lat: Optional[float] = Form(None), lon: Optional[float] = Form(None)):
     """Quietly turn the current frame into a text note. The frame is discarded."""
     body = await read_image(image)
     detections = await detect(body)
@@ -198,7 +199,7 @@ def memory_reindex():
     return memory.reindex_relations()
 
 @app.get('/memory/graph')
-def memory_graph(around: str | None = None, depth: int = 2):
+def memory_graph(around: Optional[str] = None, depth: int = 2):
     """The relationship graph: everything, or the part around one thing."""
     if around:
         return {'around': around, 'edges': memory.neighbours(around, depth=depth)}
@@ -218,16 +219,16 @@ def memory_clear():
 class RecallRemember(BaseModel):
     kind: str = Field(default='note', max_length=32)
     content: str = Field(min_length=1, max_length=4000)
-    id: str | None = Field(default=None, max_length=128)
-    supportingContext: str | None = Field(default=None, max_length=1500)
-    metadata: dict[str, str | int | float | bool] | None = None
-    date: str | None = None
+    id: Optional[str] = Field(default=None, max_length=128)
+    supportingContext: Optional[str] = Field(default=None, max_length=1500)
+    metadata: Optional[dict[str, Union[str, int, float, bool]]] = None
+    date: Optional[str] = None
 
 
 class RecallSearch(BaseModel):
     query: str = Field(default='', max_length=500)
     limit: int = Field(default=8, ge=1, le=50)
-    kinds: list[str] | None = None
+    kinds: Optional[list[str]] = None
 
 
 def _recall_when(date: str | None) -> float:
@@ -334,7 +335,7 @@ async def recall_search(body: RecallSearch):
 
 @app.post('/location')
 async def location_update(lat: float = Form(..., ge=-90, le=90), lon: float = Form(..., ge=-180, le=180), session: str = Form('default', max_length=64),
-                          heading: float | None = Form(None, ge=0, le=360)):
+                          heading: Optional[float] = Form(None, ge=0, le=360)):
     """One GPS fix in. Adds a breadcrumb to the walked path, notes new places, and returns the next spoken direction, if any."""
     if memory.record_location(lat, lon):
         memory.visit(await navigation.place_name(lat, lon))
@@ -368,7 +369,7 @@ def places_list(): return memory.places()
 
 @app.post('/places', status_code=201)
 async def places_save(name: str = Form('home', max_length=20), address: str = Form(..., min_length=3, max_length=200),
-                      lat: float | None = Form(None), lon: float | None = Form(None)):
+                      lat: Optional[float] = Form(None), lon: Optional[float] = Form(None)):
     """Look an address up on the map and remember it under a name such as home."""
     try:
         found = await assistant.resolve_place(address, (lat, lon) if lat is not None and lon is not None else None)

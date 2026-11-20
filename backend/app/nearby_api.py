@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Optional
 
 from fastapi import APIRouter, Header, HTTPException, Query, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
@@ -44,7 +45,7 @@ radar.subscribe(on_radar_event)
 rooms.subscribe(on_room_event)
 
 
-def who(device_id: str | None, secret: str | None) -> str:
+def who(device_id: Optional[str], secret: Optional[str]) -> str:
     try:
         return verify_device(device_id, secret)
     except NearbyError as error:
@@ -62,14 +63,14 @@ class BridgeMessageIn(BaseModel):
     session_id: str = Field(min_length=1, max_length=16)
     sender_role: str = Field(max_length=16)
     text: str = Field(min_length=1, max_length=2000)
-    client_id: str | None = Field(None, max_length=80)
+    client_id: Optional[str] = Field(None, max_length=80)
 
 
 class Heartbeat(BaseModel):
     role: str = Field(max_length=16)
-    lat: float | None = Field(None, ge=-90, le=90)
-    lon: float | None = Field(None, ge=-180, le=180)
-    beacon: str | None = Field(None, max_length=64)
+    lat: Optional[float] = Field(None, ge=-90, le=90)
+    lon: Optional[float] = Field(None, ge=-180, le=180)
+    beacon: Optional[str] = Field(None, max_length=64)
 
 
 class OfferReply(BaseModel):
@@ -78,49 +79,49 @@ class OfferReply(BaseModel):
 
 
 @router.post('/bridge/conversations')
-async def bridge_create(x_device_id: str | None = Header(None), x_device_secret: str | None = Header(None)):
+async def bridge_create(x_device_id: Optional[str] = Header(None), x_device_secret: Optional[str] = Header(None)):
     return guard(rooms.create, who(x_device_id, x_device_secret))
 
 
 @router.post('/bridge/conversations/{code}/join')
-async def bridge_join(code: str, x_device_id: str | None = Header(None), x_device_secret: str | None = Header(None)):
+async def bridge_join(code: str, x_device_id: Optional[str] = Header(None), x_device_secret: Optional[str] = Header(None)):
     return guard(rooms.join, code, who(x_device_id, x_device_secret))
 
 
 @router.get('/bridge/conversations/{code}')
-async def bridge_get(code: str, x_device_id: str | None = Header(None), x_device_secret: str | None = Header(None)):
+async def bridge_get(code: str, x_device_id: Optional[str] = Header(None), x_device_secret: Optional[str] = Header(None)):
     return guard(rooms.get, code, who(x_device_id, x_device_secret))
 
 
 @router.post('/bridge/message')
-async def bridge_post(body: BridgeMessageIn, x_device_id: str | None = Header(None), x_device_secret: str | None = Header(None)):
+async def bridge_post(body: BridgeMessageIn, x_device_id: Optional[str] = Header(None), x_device_secret: Optional[str] = Header(None)):
     device = who(x_device_id, x_device_secret)
     return guard(rooms.post, body.session_id, device, body.sender_role, body.text, body.client_id)
 
 
 @router.get('/bridge/messages')
 async def bridge_messages(session_id: str = Query(max_length=16), after_id: int = Query(0, ge=0), limit: int = Query(50, ge=1, le=200),
-                          x_device_id: str | None = Header(None), x_device_secret: str | None = Header(None)):
+                          x_device_id: Optional[str] = Header(None), x_device_secret: Optional[str] = Header(None)):
     return guard(rooms.messages, session_id, who(x_device_id, x_device_secret), after_id, limit)
 
 
 @router.post('/radar/heartbeat')
-async def radar_heartbeat(body: Heartbeat, x_device_id: str | None = Header(None), x_device_secret: str | None = Header(None)):
+async def radar_heartbeat(body: Heartbeat, x_device_id: Optional[str] = Header(None), x_device_secret: Optional[str] = Header(None)):
     return guard(radar.heartbeat, who(x_device_id, x_device_secret), body.role, body.lat, body.lon, body.beacon)
 
 
 @router.post('/radar/respond')
-async def radar_respond(body: OfferReply, x_device_id: str | None = Header(None), x_device_secret: str | None = Header(None)):
+async def radar_respond(body: OfferReply, x_device_id: Optional[str] = Header(None), x_device_secret: Optional[str] = Header(None)):
     return guard(radar.respond, who(x_device_id, x_device_secret), body.offer_id, body.accept)
 
 
 @router.post('/radar/leave')
-async def radar_leave(x_device_id: str | None = Header(None), x_device_secret: str | None = Header(None)):
+async def radar_leave(x_device_id: Optional[str] = Header(None), x_device_secret: Optional[str] = Header(None)):
     radar.leave(who(x_device_id, x_device_secret))
     return {'active': False}
 
 
-async def identify(socket: WebSocket) -> str | None:
+async def identify(socket: WebSocket) -> Optional[str]:
     await socket.accept()
     try:
         hello = await asyncio.wait_for(socket.receive_json(), timeout=10)
