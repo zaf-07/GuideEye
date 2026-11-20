@@ -1,4 +1,6 @@
-const baseUrl = process.env.EXPO_PUBLIC_BASE_URL || '/';
+// Empty, not '/': a slash here is joined to '/assets' and the browser reads
+// '//assets/…' as another host, which is why the web build had no icons.
+const baseUrl = (process.env.EXPO_PUBLIC_BASE_URL || '').replace(/\/+$/, '');
 
 module.exports = {
   expo: {

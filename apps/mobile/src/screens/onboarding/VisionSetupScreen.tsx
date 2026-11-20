@@ -73,6 +73,7 @@ export function VisionSetupScreen() {
           {[0.8, 1, 1.4, 1.8].map((r) => (
             <Chip
               key={r}
+              grow
               label={`${r}×`}
               active={draft.speechRate === r}
               onPress={() => {
@@ -153,6 +154,6 @@ export function VisionSetupScreen() {
 }
 
 const styles = StyleSheet.create({
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginVertical: spacing.sm },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs + 2, marginVertical: spacing.sm },
   rowBetween: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
 });

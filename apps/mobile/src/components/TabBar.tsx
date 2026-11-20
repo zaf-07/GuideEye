@@ -5,6 +5,8 @@ import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { BottomTabBarProps } from 'expo-router/js-tabs';
 import { LiquidGlass } from './LiquidGlass';
+import { hiddenTab } from '../screens/home/plan';
+import { useProfile } from '../state/ProfileContext';
 import { Text } from './Text';
 import { colors, radius, shadow, spacing } from '../theme/tokens';
 
@@ -28,6 +30,10 @@ const TABS: Record<string, { icon: keyof typeof Ionicons.glyphMap; label: string
  */
 export function TabBar({ state, navigateToTab, emitter }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
+  const { profile } = useProfile();
+  // A blind user has no use for a Hearing tab, nor a deaf user for Vision.
+  // Fewer tabs means larger targets; the home tab still links to the other mode.
+  const hidden = hiddenTab(profile);
   // Lift clear of the home indicator, but keep a floor so the bar still floats
   // on devices that report no bottom inset.
   const bottom = Math.max(insets.bottom, spacing.md);
@@ -38,7 +44,7 @@ export function TabBar({ state, navigateToTab, emitter }: BottomTabBarProps) {
         <View style={styles.row} accessibilityRole="tablist">
           {state.routes.map((route, index) => {
             const tab = TABS[route.name];
-            if (!tab) return null;
+            if (!tab || route.name === hidden) return null;
             const focused = state.index === index;
 
             const onPress = () => {
@@ -120,6 +126,6 @@ const styles = StyleSheet.create({
       default: {},
     }),
   },
-  label: { fontSize: 10.5, letterSpacing: 0.2, color: colors.textFaint },
+  label: { fontSize: 12, letterSpacing: 0.2, color: colors.textMuted },
   labelActive: { color: colors.text, fontWeight: '600' },
 });

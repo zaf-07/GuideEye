@@ -70,10 +70,13 @@ export function Chip({
   label,
   active,
   onPress,
+  grow,
 }: {
   label: string;
   active?: boolean;
   onPress?: () => void;
+  /** Share the row equally with its siblings instead of sizing to the label. */
+  grow?: boolean;
 }) {
   return (
     <Pressable
@@ -81,7 +84,7 @@ export function Chip({
       accessibilityRole={onPress ? 'button' : 'text'}
       accessibilityState={{ selected: Boolean(active) }}
       accessibilityLabel={label}
-      style={[styles.chip, active && styles.chipActive]}
+      style={[styles.chip, grow && styles.chipGrow, active && styles.chipActive]}
     >
       <Text variant="label" color={active ? colors.onLight : colors.text}>
         {label}
@@ -135,6 +138,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.glassBorder,
   },
+  chipGrow: { flex: 1, alignItems: 'center', paddingHorizontal: spacing.xs },
   chipActive: { backgroundColor: colors.pillLight, borderColor: colors.pillLight },
   pressed: { opacity: 0.85 },
 });

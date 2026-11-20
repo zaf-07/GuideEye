@@ -162,24 +162,6 @@ export function AssistantScreen() {
       />
       )}
 
-      <GlassCard>
-        <Text variant="label" muted>
-          Or type it
-        </Text>
-        <TextInput
-          value={text}
-          onChangeText={setText}
-          onSubmitEditing={send}
-          placeholder="Take me to the nearest supermarket"
-          placeholderTextColor={colors.textFaint}
-          style={styles.input}
-          accessibilityLabel="Type a request"
-          maxLength={300}
-          returnKeyType="send"
-        />
-        <Button label="Send" busy={busy} disabled={!configured} onPress={send} />
-      </GlassCard>
-
       {error ? (
         <GlassCard>
           <View style={styles.row}>
@@ -262,24 +244,21 @@ export function AssistantScreen() {
       ) : null}
 
       <GlassCard>
-        <View style={styles.row}>
-          <Ionicons name="flash-outline" size={22} color={colors.lime} />
-          <View style={styles.fill}>
-            <Text variant="section">Micro-whisper Tactile Cues</Text>
-            <Text variant="caption" muted>
-              Directional haptic pulses with spatial voice guidance
-            </Text>
-          </View>
-        </View>
-        <Button
-          label={whispering ? 'Demonstrating cues…' : 'Play Micro-whisper Demo'}
-          tone="lime"
-          disabled={whispering}
-          onPress={() => void runMicroWhisperDemo()}
-          hint="Plays sequential Left, Forward, Right, and Stop haptic directional cues."
-          style={{ marginTop: spacing.sm }}
-          icon={<Ionicons name="volume-high-outline" size={18} color={colors.onLight} />}
+        <Text variant="label" muted>
+          Or type it
+        </Text>
+        <TextInput
+          value={text}
+          onChangeText={setText}
+          onSubmitEditing={send}
+          placeholder="Type a request"
+          placeholderTextColor={colors.textFaint}
+          style={styles.input}
+          accessibilityLabel="Type a request"
+          maxLength={300}
+          returnKeyType="send"
         />
+        <Button label="Send" busy={busy} disabled={!configured} onPress={send} />
       </GlassCard>
 
       <Text variant="label" muted>
@@ -290,6 +269,27 @@ export function AssistantScreen() {
           <Chip key={suggestion} label={suggestion} onPress={() => void ask(suggestion)} />
         ))}
       </View>
+
+      <GlassCard>
+        <View style={styles.row}>
+          <Ionicons name="flash-outline" size={22} color={colors.lime} />
+          <View style={styles.fill}>
+            <Text variant="section">Micro-whisper Tactile Cues</Text>
+            <Text variant="caption" muted>
+              Directional haptic pulses with spatial voice guidance
+            </Text>
+          </View>
+        </View>
+        <Button
+          label={whispering ? 'Playing…' : 'Play the demo'}
+          tone="lime"
+          disabled={whispering}
+          onPress={() => void runMicroWhisperDemo()}
+          hint="Plays sequential Left, Forward, Right, and Stop haptic directional cues."
+          style={{ marginTop: spacing.sm }}
+          icon={<Ionicons name="volume-high-outline" size={18} color={colors.onLight} />}
+        />
+      </GlassCard>
     </Screen>
   );
 }

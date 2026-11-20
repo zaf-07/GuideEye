@@ -440,6 +440,7 @@ const s = StyleSheet.create({
   },
   directionCard: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     backgroundColor: '#0A1713',
     borderRadius: 14,
@@ -529,6 +530,7 @@ const s = StyleSheet.create({
   },
   textInput: {
     flex: 1,
+    minWidth: 0,
     backgroundColor: '#07110F',
     borderWidth: 1,
     borderColor: '#1C3B2E',

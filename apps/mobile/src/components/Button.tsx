@@ -53,7 +53,7 @@ export function Button({ label, onPress, tone = 'primary', hint, disabled, busy,
       ) : (
         <View style={styles.row}>
           {icon}
-          <Text variant="section" color={dark ? colors.onLight : colors.text}>
+          <Text variant="section" color={dark ? colors.onLight : colors.text} center style={styles.label}>
             {label}
           </Text>
         </View>
@@ -71,7 +71,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
   },
-  row: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  // A long label wraps centred inside the pill instead of running to its edge.
+  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, maxWidth: '100%' },
+  label: { flexShrink: 1 },
   primary: { backgroundColor: colors.pillLight },
   lime: { backgroundColor: colors.lime },
   glass: {

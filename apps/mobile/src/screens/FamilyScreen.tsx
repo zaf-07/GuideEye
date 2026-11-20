@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { StyleSheet, Switch, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, Switch, TextInput, View } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -150,26 +150,35 @@ export function FamilyScreen() {
           </View>
           <View style={styles.actions}>
             <Button
-              label="Share my location"
+              label={`Call ${contact.name}`}
               tone="lime"
               disabled={busy}
-              onPress={() => void ask(`Tell ${contact.name} where I am`)}
-              hint={`Prepares a WhatsApp message to ${contact.name} and asks before sending.`}
+              onPress={() => void ask(`Call ${contact.name}`)}
+              hint="Starts a phone call."
+              icon={<Ionicons name="call" size={20} color={colors.onLight} />}
             />
             <Button
-              label={`Call ${contact.name}`}
+              label="Share my location"
               tone="glass"
               disabled={busy}
-              onPress={() => void ask(`Call ${contact.name}`)}
-              hint="Asks before the call starts."
+              onPress={() => void ask(`Tell ${contact.name} where I am`)}
+              hint={`Prepares a WhatsApp message to ${contact.name}.`}
+              icon={<Ionicons name="location-outline" size={20} color={colors.text} />}
             />
-            <Button
-              label="Remove"
-              tone="ghost"
-              disabled={busy}
+            <Pressable
               onPress={() => void remove(contact)}
-              hint={`Removes ${contact.name} from your contacts.`}
-            />
+              disabled={busy}
+              accessibilityRole="button"
+              accessibilityLabel={`Remove ${contact.name}`}
+              accessibilityHint={`Removes ${contact.name} from your contacts.`}
+              style={styles.remove}
+              hitSlop={8}
+            >
+              <Ionicons name="trash-outline" size={16} color={colors.danger} />
+              <Text variant="label" color={colors.danger}>
+                Remove
+              </Text>
+            </Pressable>
           </View>
         </GlassCard>
       ))}
@@ -217,6 +226,8 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   fill: { flex: 1 },
   actions: { gap: spacing.sm, marginTop: spacing.xs },
+  // Deliberately smaller than the two things people come here to do.
+  remove: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs, alignSelf: 'flex-end', paddingHorizontal: spacing.sm },
   input: {
     minHeight: HIT,
     color: colors.text,

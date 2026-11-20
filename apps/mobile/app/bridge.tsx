@@ -71,7 +71,7 @@ const STATUS_EVERY_POLLS = 4;
 const ROLE_OPTIONS: Array<{ role: DeviceRole; title: string; detail: string; icon: keyof typeof Ionicons.glyphMap }> = [
   { role: 'deaf', title: 'I sign', detail: 'Deaf side: camera reads my signs, replies appear in large text.', icon: 'hand-right' },
   { role: 'blind', title: 'I speak', detail: 'Blind side: signs are spoken aloud, I reply by voice or buttons.', icon: 'mic' },
-  { role: 'both', title: 'Both of us, this device', detail: 'One laptop shared by both people.', icon: 'people' },
+  { role: 'both', title: 'Both of us, this device', detail: 'One phone shared by both people.', icon: 'people' },
 ];
 
 function parseRole(value: unknown): DeviceRole | null {
@@ -1295,6 +1295,7 @@ const s = StyleSheet.create({
   },
   customInput: {
     flex: 1,
+    minWidth: 0,
     height: 44,
     backgroundColor: '#11221D',
     borderRadius: 10,
@@ -1328,7 +1329,7 @@ const s = StyleSheet.create({
   secondaryBtnText: { color: '#D5E6D8', fontSize: 13, fontWeight: '700' },
   btnDisabled: { opacity: 0.5 },
   codeInput: { fontSize: 20, letterSpacing: 4, fontWeight: '800' },
-  joinBtn: { height: 44, paddingHorizontal: 18, borderRadius: 10, backgroundColor: '#B7FF56', justifyContent: 'center' },
+  joinBtn: { height: 44, flexShrink: 0, paddingHorizontal: 18, borderRadius: 10, backgroundColor: '#B7FF56', justifyContent: 'center' },
   joinBtnText: { color: '#07110F', fontWeight: '900', fontSize: 14 },
   errorText: { color: '#FF8A7A', fontSize: 13, fontWeight: '700', marginBottom: 10 },
   codeBar: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#0B1A16', borderWidth: 1, borderColor: '#1C362C', borderRadius: 14, padding: 12, marginBottom: 12 },

@@ -3,7 +3,7 @@ import { ActivityIndicator, Alert, StyleSheet, Switch, TextInput, View } from 'r
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
-import { Button, Chip, Display, GlassCard, RoundButton, Screen, Text } from '../components';
+import { Button, Chip, Display, GlassCard, Screen, Text } from '../components';
 import { apiJson, apiUrl, devHostApiUrl, loadApiUrl, probeApi, setApiUrl } from '../api';
 import { listPlaces, removePlace, savePlace } from '../assistant';
 import { currentCoordinates } from '../useAssistant';
@@ -348,11 +348,7 @@ export function SettingsScreen() {
 
   return (
     <Screen underTabBar>
-      <View style={styles.bar}>
-        <RoundButton icon="chevron-back" label="Back" onPress={() => router.back()} />
-      </View>
-
-      <Display lead="Settings" accent="and profile" />
+      <Display lead="Settings" accent="and profile" style={{ marginTop: spacing.md }} />
 
       <GlassCard style={{ marginTop: spacing.md }}>
         <Text variant="caption" faint>
@@ -376,9 +372,27 @@ export function SettingsScreen() {
         />
       </GlassCard>
 
-      <ServerCard />
+      {hasVisionTrack(profile) ? (
+        <GlassCard>
+          <Row
+            title="Hands-free voice control"
+            caption="The microphone stays on while GuideEye is open. Say “Guide”, then your request, from any screen. Speech is recognised in English."
+            value={profile.voiceControl !== false}
+            onChange={(v) => patch({ voiceControl: v })}
+          />
+        </GlassCard>
+      ) : null}
 
-      <WearableCard />
+      {hasVisionTrack(profile) ? (
+        <GlassCard>
+          <Row
+            title="Full permission"
+            caption="GuideEye calls and messages your contacts as soon as you ask, without “are you sure?”. Paying always waits for your yes."
+            value={Boolean(profile.fullPermission)}
+            onChange={(v) => patch({ fullPermission: v })}
+          />
+        </GlassCard>
+      ) : null}
 
       {vision ? (
         <GlassCard>
@@ -389,11 +403,11 @@ export function SettingsScreen() {
           </View>
           <View style={styles.chips}>
             {[0.8, 1, 1.4, 1.8].map((r) => (
-              <Chip key={r} label={`${r}×`} active={profile.speechRate === r} onPress={() => patch({ speechRate: r })} />
+              <Chip key={r} grow label={`${r}×`} active={profile.speechRate === r} onPress={() => patch({ speechRate: r })} />
             ))}
           </View>
           <Button
-            label="Test natural voice (ElevenLabs)"
+            label="Test the voice"
             tone="glass"
             onPress={() => testVoice(profile, 'Hello! This is GuideEye speaking with ElevenLabs natural voice.')}
             hint="Plays a sample phrase to test on-device speech playback."
@@ -445,28 +459,6 @@ export function SettingsScreen() {
 
       {hasVisionTrack(profile) ? <HomeAddressCard /> : null}
 
-      {hasVisionTrack(profile) ? (
-        <GlassCard>
-          <Row
-            title="Hands-free voice control"
-            caption="The microphone stays on while GuideEye is open. Say “Guide”, then your request, from any screen. Speech is recognised in English."
-            value={profile.voiceControl !== false}
-            onChange={(v) => patch({ voiceControl: v })}
-          />
-        </GlassCard>
-      ) : null}
-
-      {hasVisionTrack(profile) ? (
-        <GlassCard>
-          <Row
-            title="Full permission"
-            caption="GuideEye calls and messages your contacts as soon as you ask, without “are you sure?”. Paying always waits for your yes."
-            value={Boolean(profile.fullPermission)}
-            onChange={(v) => patch({ fullPermission: v })}
-          />
-        </GlassCard>
-      ) : null}
-
       <GlassCard>
         <Row
           title="Find nearby GuideEye users"
@@ -496,6 +488,14 @@ export function SettingsScreen() {
         />
       </GlassCard>
 
+      <Text variant="label" muted style={styles.groupLabel}>
+        Connection
+      </Text>
+
+      <ServerCard />
+
+      <WearableCard />
+
     </Screen>
   );
 }
@@ -503,7 +503,8 @@ export function SettingsScreen() {
 const styles = StyleSheet.create({
   bar: { flexDirection: 'row', paddingTop: spacing.sm, paddingBottom: spacing.md },
   row: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.sm },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs + 2, marginTop: spacing.sm },
+  groupLabel: { marginTop: spacing.md, textTransform: 'uppercase', letterSpacing: 0.6 },
   input: {
     marginTop: spacing.sm,
     backgroundColor: 'rgba(255,255,255,0.06)',

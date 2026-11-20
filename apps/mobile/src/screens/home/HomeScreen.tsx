@@ -9,16 +9,18 @@ import { router } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as Speech from 'expo-speech';
-import { Display, GlassCard, GreetingBar, Screen, Text } from '../../components';
+import { Display, GreetingBar, Screen, Text } from '../../components';
 import { useProfile } from '../../state/ProfileContext';
 import { hasLocalDetector } from '../../detector';
 import { hasVisionTrack } from '../../state/profile';
+import { homePlan, type HomeAction } from './plan';
+import { ActionRow, ActionTile, PrimaryTile } from './tiles';
 import { colors, radius, shadow, spacing } from '../../theme/tokens';
 
 const CONTENT = {
   en: {
     userName: (name: string) => (name && name !== 'there' && name !== 'Пользователь') ? name : 'there',
-    aiStatusLive: 'On-Device YOLOv8 Active (Offline)',
+    aiStatusLive: 'On-device detection ready',
     aiStatusReady: 'Camera Ready · Local Mode',
     headlineLead: 'GuideEye',
     headlineAccent: 'for everyone',
@@ -57,7 +59,7 @@ const CONTENT = {
   },
   ru: {
     userName: (name: string) => (name && name !== 'there') ? name : 'друг',
-    aiStatusLive: 'Нативная нейросеть YOLOv8 активна (Автономно)',
+    aiStatusLive: 'Распознавание на устройстве готово',
     aiStatusReady: 'Камера готова · Локальный режим',
     headlineLead: 'GuideEye',
     headlineAccent: 'для каждого',
@@ -116,19 +118,6 @@ const SECTION_SUB: Record<HomeSection, string> = {
   hearing: 'Sign avatar, large captions and sign reading.',
   connect: 'One device, two people, both directions.',
 };
-
-/** The cards on the home tab, each a door to one of the other tabs. */
-const OVERVIEW: {
-  tab: '/main/vision' | '/main/hearing' | '/main/connect';
-  icon: keyof typeof Ionicons.glyphMap;
-  tint: string;
-  title: string;
-  desc: string;
-}[] = [
-  { tab: '/main/vision', icon: 'eye', tint: colors.lime, title: 'Blind or Low Vision', desc: 'Pocket assistant, obstacles and turn-by-turn walking' },
-  { tab: '/main/hearing', icon: 'hand-left', tint: '#5BE1F0', title: 'Deaf or Hard of Hearing', desc: '3D sign avatar, large captions, read my signs' },
-  { tab: '/main/connect', icon: 'swap-horizontal', tint: '#C9A7FF', title: 'Conversation Bridge', desc: 'Deaf signs in, blind hears it — and back again' },
-];
 
 // The welcome is said once per launch. Every tab renders this screen, so
 // without the flag it was repeated on each tab the user opened.
@@ -199,6 +188,16 @@ export function HomeScreen({ section = 'home' }: { section?: HomeSection } = {})
     router.push('/bridge?role=both');
   };
 
+  const plan = homePlan(profile);
+  const openAction = (action: HomeAction) => {
+    if (action.key === 'pocket') {
+      openBlindMode();
+      return;
+    }
+    if (action.prompt) router.push({ pathname: '/assistant', params: { prompt: action.prompt } });
+    else router.push(action.href as never);
+  };
+
   const openNavigation = (destination?: string) => {
     triggerHaptic(Haptics.ImpactFeedbackStyle.Light);
     if (destination) {
@@ -215,59 +214,55 @@ export function HomeScreen({ section = 'home' }: { section?: HomeSection } = {})
         onSettings={() => router.navigate('/main/settings')}
       />
 
-      {/* AI Status & Language Row */}
-      <View style={styles.statusRowContainer}>
-        <View style={styles.statusPill}>
-          <View style={[styles.statusDot, detectorReady && styles.statusDotLive]} />
-          <Text variant="caption" style={styles.statusPillText}>
-            {detectorReady ? t.aiStatusLive : t.aiStatusReady}
-          </Text>
-        </View>
-
-        <Pressable
-          onPress={toggleLanguage}
-          style={styles.langPill}
-          accessibilityLabel={`Language switch. Current language: ${lang.toUpperCase()}`}
-        >
-          <Ionicons name="globe-outline" size={13} color={colors.lime} />
-          <Text style={styles.langPillText}>{lang === 'en' ? 'EN' : 'RU'}</Text>
-        </Pressable>
-      </View>
-
-      <View style={styles.headerBlock}>
-        <Display lead={t.headlineLead} accent={SECTION_ACCENT[section] ?? t.headlineAccent} />
-        <Text variant="body" muted style={{ marginTop: 2 }}>
-          {SECTION_SUB[section] ?? t.headlineSub}
-        </Text>
-      </View>
-
-      {/* The home tab is a way in to the others, not a copy of them. */}
       {section === 'home' ? (
-        <View style={styles.overviewGrid}>
-          {OVERVIEW.map((entry) => (
-            <Pressable
-              key={entry.tab}
-              onPress={() => {
-                Haptics.selectionAsync().catch(() => {});
-                router.navigate(entry.tab);
-              }}
-              accessibilityRole="button"
-              accessibilityLabel={`${entry.title}. ${entry.desc}`}
-              style={({ pressed }) => [styles.overviewCard, pressed && styles.cardPressed]}
-            >
-              <View style={[styles.overviewIcon, { backgroundColor: entry.tint }]}>
-                <Ionicons name={entry.icon} size={22} color={colors.onLight} />
-              </View>
-              <Text variant="section" color={colors.text} style={styles.overviewTitle}>
-                {entry.title}
-              </Text>
-              <Text variant="caption" muted style={styles.overviewDesc}>
-                {entry.desc}
-              </Text>
-            </Pressable>
+        <View style={styles.personal}>
+          {plan.status ? (
+            <Text variant="body" muted accessibilityLiveRegion="polite">
+              {plan.status}
+            </Text>
+          ) : null}
+          <PrimaryTile action={plan.primary} onPress={() => openAction(plan.primary)} />
+          <View style={styles.tileGrid}>
+            {plan.actions.map((action) => (
+              <ActionTile key={action.key} action={action} onPress={() => openAction(action)} />
+            ))}
+          </View>
+          <Text variant="label" muted style={styles.moreLabel}>
+            Also in GuideEye
+          </Text>
+          {plan.more.map((action) => (
+            <ActionRow key={action.key} action={action} onPress={() => openAction(action)} />
           ))}
         </View>
-      ) : null}
+      ) : (
+        <>
+          {/* AI Status & Language Row */}
+          <View style={styles.statusRowContainer}>
+            <View style={styles.statusPill}>
+              <View style={[styles.statusDot, detectorReady && styles.statusDotLive]} />
+              <Text variant="caption" style={styles.statusPillText}>
+                {detectorReady ? t.aiStatusLive : t.aiStatusReady}
+              </Text>
+            </View>
+
+            <Pressable
+              onPress={toggleLanguage}
+              style={styles.langPill}
+              accessibilityLabel={`Language switch. Current language: ${lang.toUpperCase()}`}
+            >
+              <Ionicons name="globe-outline" size={13} color={colors.lime} />
+              <Text style={styles.langPillText}>{lang === 'en' ? 'EN' : 'RU'}</Text>
+            </Pressable>
+          </View>
+
+          <View style={styles.headerBlock}>
+            <Display lead={t.headlineLead} accent={SECTION_ACCENT[section] ?? t.headlineAccent} />
+            <Text variant="body" muted style={{ marginTop: 2 }}>
+              {SECTION_SUB[section] ?? t.headlineSub}
+            </Text>
+          </View>
+        </>
+      )}
 
       {/* ========================================================================= */}
       {/* MODE 1: BLIND / LOW VISION (CHEST POCKET ASSISTANT)                       */}
@@ -477,30 +472,14 @@ export function HomeScreen({ section = 'home' }: { section?: HomeSection } = {})
       </View>
       ) : null}
 
-      {/* ========================================================================= */}
-      {/* ALS / MOTOR PREVIEW BADGE                                                 */}
-      {/* ========================================================================= */}
-      {section === 'home' ? (
-      <View style={styles.alsContainer}>
-        <GlassCard style={styles.alsCard}>
-          <View style={styles.alsRow}>
-            <Ionicons name="eye-outline" size={20} color={colors.textFaint} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.alsTitle}>{t.alsTitle}</Text>
-              <Text style={styles.alsSub}>{t.alsDesc}</Text>
-            </View>
-            <View style={styles.alsPill}>
-              <Text style={styles.alsPillText}>{t.alsBadge}</Text>
-            </View>
-          </View>
-        </GlassCard>
-      </View>
-      ) : null}
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
+  personal: { gap: spacing.md, marginTop: spacing.xs },
+  tileGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  moreLabel: { marginTop: spacing.sm },
   overviewGrid: { gap: spacing.sm, marginTop: spacing.xs },
   overviewCard: {
     backgroundColor: colors.glass,
@@ -648,20 +627,23 @@ const styles = StyleSheet.create({
     borderTopColor: 'rgba(255,255,255,0.08)',
   },
   navPill: {
+    flexGrow: 1,
+    flexBasis: '46%',
+    minHeight: 48,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: 'rgba(255,255,255,0.08)',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-    gap: 5,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    gap: 8,
   },
   navPillMic: {
     backgroundColor: colors.lime,
   },
   navPillText: {
     color: colors.text,
-    fontSize: 12,
+    fontSize: 15,
     fontWeight: '700',
   },
 

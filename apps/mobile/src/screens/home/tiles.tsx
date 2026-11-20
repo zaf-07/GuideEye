@@ -10,7 +10,9 @@ export interface Action {
   title: string;
   accent?: string;
   blurb: string;
-  icon: keyof typeof Ionicons.glyphMap;
+  /** Shown on the small tiles instead of the full sentence. */
+  short?: string;
+  icon: keyof typeof Ionicons.glyphMap | string;
   /** Working engine route. Omit to fall through to the roadmap screen. */
   route?: string;
   hint?: string;
@@ -33,7 +35,7 @@ export function PrimaryTile({ action, onPress }: { action: Action; onPress: () =
       style={({ pressed }) => [styles.primary, shadow.card, pressed && styles.pressed]}
     >
       <View style={styles.primaryIcon}>
-        <Ionicons name={action.icon} size={30} color={colors.onLight} />
+        <Ionicons name={action.icon as keyof typeof Ionicons.glyphMap} size={34} color={colors.onLight} />
       </View>
       <Text variant="title" color={colors.onLight}>
         {action.title}
@@ -64,14 +66,40 @@ export function ActionTile({ action, onPress }: { action: Action; onPress: () =>
       style={({ pressed }) => [styles.tile, pressed && styles.pressed]}
     >
       <View style={styles.tileIcon}>
-        <Ionicons name={action.icon} size={24} color={colors.lime} />
+        <Ionicons name={action.icon as keyof typeof Ionicons.glyphMap} size={24} color={colors.lime} />
       </View>
       <View style={{ gap: 4 }}>
         <Text variant="section">{action.title}</Text>
         <Text variant="caption" muted>
+          {action.short ?? action.blurb}
+        </Text>
+      </View>
+    </Pressable>
+  );
+}
+
+/** A full-width row for the modes that are not the user's own. */
+export function ActionRow({ action, onPress }: { action: Action; onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={() => {
+        Haptics.selectionAsync().catch(() => {});
+        onPress();
+      }}
+      accessibilityRole="button"
+      accessibilityLabel={`${action.title}. ${action.blurb}`}
+      style={({ pressed }) => [styles.row, pressed && styles.pressed]}
+    >
+      <View style={styles.tileIcon}>
+        <Ionicons name={action.icon as keyof typeof Ionicons.glyphMap} size={22} color={colors.lime} />
+      </View>
+      <View style={styles.rowBody}>
+        <Text variant="label">{action.title}</Text>
+        <Text variant="caption" muted numberOfLines={2}>
           {action.blurb}
         </Text>
       </View>
+      <Ionicons name="chevron-forward" size={20} color={colors.textFaint} />
     </Pressable>
   );
 }
@@ -100,6 +128,19 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
     marginTop: spacing.sm,
   },
+  row: {
+    minHeight: 72,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    backgroundColor: colors.glass,
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
+    borderRadius: radius.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+  },
+  rowBody: { flex: 1, gap: 2 },
   tile: {
     flexGrow: 1,
     flexBasis: '46%',

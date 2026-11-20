@@ -101,18 +101,13 @@ export function PermissionsScreen() {
       </View>
 
       <GlassCard style={{ marginTop: spacing.md }}>
-        <View style={styles.row}>
+        <View style={styles.titleRow}>
           <View style={styles.icon}>
             <Ionicons name="people-outline" size={24} color={colors.lime} />
           </View>
-          <View style={{ flex: 1, gap: 4 }}>
-            <Text variant="section">Nearby conversations</Text>
-            <Text variant="body" muted>
-              Off by default. When on, another GuideEye user close to you can
-              be offered a conversation while the app is open. Neither of you
-              sees who the other is until you both connect.
-            </Text>
-          </View>
+          <Text variant="section" style={{ flex: 1 }}>
+            Nearby conversations
+          </Text>
           <Switch
             value={draft.nearbyDiscovery}
             onValueChange={(v) => set({ nearbyDiscovery: v })}
@@ -120,6 +115,10 @@ export function PermissionsScreen() {
             accessibilityLabel="Nearby conversations"
           />
         </View>
+        <Text variant="body" muted>
+          Off by default. When on, another GuideEye user close to you can be offered a conversation while the
+          app is open. Neither of you sees who the other is until you both connect.
+        </Text>
       </GlassCard>
 
       <GlassCard>
@@ -143,6 +142,7 @@ export function PermissionsScreen() {
 
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   icon: {
     width: 48,
     height: 48,

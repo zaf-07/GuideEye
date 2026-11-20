@@ -250,7 +250,9 @@ export default function CameraScreen() {
     }));
   const current: AssistFrame = vision || detections.length ? {
     title: vision?.summary || localSummary,
-    detail: sceneSentence || vision?.speech || 'Real-time spatial tracker running privately on this device.',
+    detail: sceneSentence
+      || (vision?.kind === 'objects' ? 'Detected on this phone. Ask “Guide, what is in front of me?” for more.' : vision?.speech)
+      || 'Real-time spatial tracker running privately on this device.',
     // Asked to repeat, say what is known: the named objects first, then the fuller sentence.
     speech: [vision?.kind === 'empty' ? '' : vision?.speech || localSummary, sceneSentence && sceneSentence !== vision?.speech ? sceneSentence : '']
       .filter(Boolean)
@@ -1084,10 +1086,10 @@ const c = StyleSheet.create({
   modeIndicator: { backgroundColor: 'rgba(4,13,10,.76)', borderRadius: 99, paddingHorizontal: 13, paddingVertical: 9, flexDirection: 'row', alignItems: 'center', gap: 7 },
   greenDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#B7FF56' },
   modeText: { color: '#EAF5EF', fontSize: 10, fontWeight: '800', letterSpacing: 1.1 },
-  modeTabs: { flexDirection: 'row', alignSelf: 'center', gap: 6, backgroundColor: 'rgba(4,13,10,.74)', borderRadius: 17, borderWidth: 1, borderColor: 'rgba(255,255,255,.12)', padding: 5, marginTop: 16 },
-  modeTab: { minHeight: 42, flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 13, borderRadius: 12 },
+  modeTabs: { flexDirection: 'row', alignSelf: 'stretch', gap: 4, backgroundColor: 'rgba(4,13,10,.74)', borderRadius: 17, borderWidth: 1, borderColor: 'rgba(255,255,255,.12)', padding: 5, marginTop: 16 },
+  modeTab: { flex: 1, minWidth: 0, minHeight: 46, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 6, borderRadius: 12 },
   modeTabActive: { backgroundColor: '#B7FF56' },
-  modeTabText: { color: '#DDE9E4', fontSize: 12, fontWeight: '800' },
+  modeTabText: { color: '#DDE9E4', fontSize: 12, fontWeight: '800', flexShrink: 1 },
   modeTabTextActive: { color: '#09130D' },
   coachBanner: { alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 7, maxWidth: '92%', backgroundColor: 'rgba(4,20,14,.9)', borderWidth: 1, borderColor: 'rgba(183,255,86,.45)', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 8, marginTop: 10 },
   coachText: { color: '#E6F3EB', fontSize: 11, fontWeight: '700', flexShrink: 1 },
@@ -1319,6 +1321,7 @@ const c = StyleSheet.create({
   },
   aslWordActions: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 6,
     marginTop: 8,
     borderTopWidth: 1,
@@ -1326,7 +1329,9 @@ const c = StyleSheet.create({
     paddingTop: 9,
   },
   aslActionBtn: {
-    flex: 1,
+    flexGrow: 1,
+    flexBasis: '28%',
+    minHeight: 44,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1334,15 +1339,17 @@ const c = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.08)',
     borderRadius: 10,
     paddingVertical: 9,
+    paddingHorizontal: 8,
   },
-  aslFinishBtn: { backgroundColor: '#B7FF56', flex: 1.6 },
+  // The one action that ends a sentence gets a row of its own.
+  aslFinishBtn: { backgroundColor: '#B7FF56', flexBasis: '100%' },
   aslFinishText: { color: '#07110F' },
   aslActionClearBtn: {
     backgroundColor: 'rgba(255, 130, 111, 0.12)',
   },
   aslActionText: {
     color: '#DCEAE4',
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: '700',
   },
   aslActionClearText: { color: '#FF826F' },
@@ -1505,15 +1512,17 @@ const c = StyleSheet.create({
     fontWeight: '600',
   },
   pocketExitBtn: {
-    paddingHorizontal: 16,
+    minHeight: 48,
+    justifyContent: 'center',
+    paddingHorizontal: 22,
     paddingVertical: 8,
-    borderRadius: 8,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.2)',
   },
   pocketExitText: {
-    color: '#8E9B8D',
-    fontSize: 13,
+    color: '#C3CDC2',
+    fontSize: 15,
     fontWeight: '600',
   },
 });
