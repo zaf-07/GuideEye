@@ -96,7 +96,7 @@ function speakable(code: string) {
 
 export default function DeafBlindBridgeScreen() {
   const params = useLocalSearchParams<{ code?: string; role?: string; output?: 'avatar' | 'text' | 'both' }>();
-  const { profile } = useProfile();
+  const { profile, patch: patchProfile } = useProfile();
   // `receive` is a stable callback, so read the profile through a ref rather
   // than rebuilding the subscription every time a preference changes.
   const profileRef = useRef(profile);
@@ -200,7 +200,8 @@ export default function DeafBlindBridgeScreen() {
 
   const start = async (chosen: DeviceRole) => {
     if (!bridgeServerConfigured()) {
-      setSetupError('No GuideEye server is set, so two devices cannot connect. Use "This device only", or set the server address in the Hub.');
+      await patchProfile({ nearbyDiscovery: true });
+      setSetupError('Searching for another GuideEye iPhone nearby. Keep this screen open on both phones and accept the connection on each one. No server is required.');
       return;
     }
     setBusy(true);
@@ -209,7 +210,8 @@ export default function DeafBlindBridgeScreen() {
       enter(conversation.code, chosen, conversation.partner_joined);
       speak(`Your bridge code is ${speakable(conversation.code)}. Share it with your partner.`, 0.9);
     } catch {
-      setSetupError('Could not reach the GuideEye server. Check the connection, or use "This device only".');
+      await patchProfile({ nearbyDiscovery: true });
+      setSetupError('The server is unavailable, so GuideEye switched to a direct nearby connection. Keep this screen open on both phones and accept on each one.');
     } finally {
       setBusy(false);
     }
@@ -487,9 +489,9 @@ export default function DeafBlindBridgeScreen() {
                 disabled={busy}
                 onPress={() => void start(role)}
                 accessibilityRole="button"
-                accessibilityLabel="Start a new conversation and get a code"
+                accessibilityLabel="Find a nearby GuideEye user or start a server conversation"
               >
-                <Text style={s.primaryBtnText}>Start a conversation</Text>
+                <Text style={s.primaryBtnText}>Connect nearby</Text>
               </Pressable>
 
               <Text style={s.setupLabel}>Or join your partner with their 6-digit code</Text>

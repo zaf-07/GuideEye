@@ -20,7 +20,10 @@ export function NearbyPrompt() {
   const pathname = usePathname();
   const role = roleForImpairments(profile.impairments);
   const enabled = ready && onboarded && Boolean(profile.nearbyDiscovery) && role !== null;
-  const paused = pathname.startsWith('/bridge') || pathname.startsWith('/onboarding');
+  // Keep Multipeer alive while Bridge is open: the peer session is the actual
+  // message transport after a direct match. Pausing here used to disconnect
+  // the two phones immediately after both people accepted.
+  const paused = pathname.startsWith('/onboarding');
   const { offer, match, accept, decline, clearMatch } = useNearby(enabled, role, paused);
   const audioFirst = hasVisionTrack(profile);
   const profileRef = useRef(profile);

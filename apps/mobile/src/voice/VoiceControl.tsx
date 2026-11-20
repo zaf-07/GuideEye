@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import { AppState, Platform, StyleSheet, Text, View } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import * as Speech from 'expo-speech';
+import { Camera } from 'expo-camera';
 import { router, usePathname } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { announce, speechBusy, stopSpeaking } from '../lib/announce';
@@ -27,8 +28,10 @@ const OWN_MICROPHONE = /^\/(bridge|translate)\b/;
 const RESTART_MS = 350;
 const RETRY_MS = 1500;
 const SLOW_RETRY_MS = 10000;
-const FOLLOW_UP_MS = 7000;
-const GREETING = 'GuideEye is listening. Say Guide, then what you need. Say Guide, help, for examples.';
+const FOLLOW_UP_MS = 12000;
+const WAKE_DEBOUNCE_MS = 550;
+const BARE_WAKE = /^\s*(?:hey[\s,]+|okay[\s,]+|ok[\s,]+|hi[\s,]+)?(?:guide\s*eye|guide)\s*[,.!?]*\s*$/i;
+const GREETING = 'GuideEye is listening. Say Guide when you need me.';
 
 export function VoiceProvider({ children }: { children: React.ReactNode }) {
   const { ready, onboarded, profile } = useProfile();
@@ -52,6 +55,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
   const want = useRef(false);
   const failures = useRef(0);
   const restart = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const wakeDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const followUpUntil = useRef(0);
   const greeted = useRef(false);
   const scheduled = useRef<ReturnType<typeof setTimeout>[]>([]);
@@ -60,9 +64,18 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
   const assistantRef = useRef(assistant);
   assistantRef.current = assistant;
 
-  const say = useCallback((message: string) => announce(profileRef.current, message, { urgent: true }), []);
-
   const beginRef = useRef<() => void>(() => {});
+
+  const say = useCallback((message: string) => {
+    // Recognition and synthesis share AVAudioSession on iOS. Explicitly hand
+    // the session to the speaker, then let begin() restore the microphone once
+    // GuideEye's own voice and the echo-suppression tail are finished.
+    if (want.current) {
+      try { ExpoSpeechRecognitionModule.abort(); } catch {}
+    }
+    announce(profileRef.current, message, { urgent: true });
+    if (want.current) setTimeout(() => beginRef.current(), 250);
+  }, []);
 
   const queue = useCallback((delay: number) => {
     if (restart.current) clearTimeout(restart.current);
@@ -76,29 +89,39 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     if (!want.current) return;
     try {
       if (!ExpoSpeechRecognitionModule.isRecognitionAvailable()) return;
-      const permission = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
-      if (!permission.granted) {
+      if (speechBusy() || (await Speech.isSpeakingAsync().catch(() => false))) {
+        queue(RESTART_MS);
+        return;
+      }
+      const [permission, microphone] = await Promise.all([
+        ExpoSpeechRecognitionModule.requestPermissionsAsync(),
+        Camera.requestMicrophonePermissionsAsync(),
+      ]);
+      if (!permission.granted || !microphone.granted) {
         setDenied(true);
         say('Voice control needs microphone and speech recognition access. Turn them on in iPhone Settings, under GuideEye.');
         return;
       }
       if (!want.current) return;
-      ExpoSpeechRecognitionModule.start({
-        lang: 'en-US',
-        interimResults: false,
-        continuous: true,
-        addsPunctuation: false,
-        contextualStrings: ['Guide', 'GuideEye'],
-        iosCategory: {
-          category: 'playAndRecord',
-          categoryOptions: ['defaultToSpeaker', 'allowBluetooth'],
-          mode: 'default',
-        },
-      });
       if (!greeted.current) {
         greeted.current = true;
         say(GREETING);
+        return;
       }
+      ExpoSpeechRecognitionModule.start({
+        lang: 'en-US',
+        interimResults: true,
+        continuous: true,
+        addsPunctuation: false,
+        contextualStrings: ['Guide', 'GuideEye'],
+        iosTaskHint: 'unspecified',
+        iosCategory: {
+          category: 'playAndRecord',
+          categoryOptions: ['defaultToSpeaker', 'allowBluetooth'],
+          mode: 'measurement',
+        },
+        iosVoiceProcessingEnabled: true,
+      });
     } catch {
       queue(RETRY_MS);
     }
@@ -106,7 +129,13 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
   beginRef.current = () => void begin();
 
   useEffect(() => {
-    const subscription = AppState.addEventListener('change', (state) => setAppActive(state === 'active'));
+    const subscription = AppState.addEventListener('change', (state) => {
+      const active = state === 'active';
+      setAppActive(active);
+      // Permission may have been enabled in Settings while GuideEye was in
+      // the background. Let the listener try again when the app returns.
+      if (active) setDenied(false);
+    });
     return () => subscription.remove();
   }, []);
 
@@ -119,6 +148,8 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
       want.current = false;
       if (restart.current) clearTimeout(restart.current);
       restart.current = null;
+      if (wakeDebounce.current) clearTimeout(wakeDebounce.current);
+      wakeDebounce.current = null;
       try {
         ExpoSpeechRecognitionModule.abort();
       } catch {}
@@ -168,6 +199,16 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     [say],
   );
 
+  const activateWake = useCallback(() => {
+    // Ignore duplicate interim/final events for the same wake word.
+    if (Date.now() < followUpUntil.current) return;
+    followUpUntil.current = Date.now() + FOLLOW_UP_MS;
+    setHeard('Guide');
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    if (!pathname.startsWith('/assistant')) router.push('/assistant' as never);
+    say('Yes?');
+  }, [pathname, say]);
+
   useSpeechRecognitionEvent('start', () => {
     if (!want.current) return;
     failures.current = 0;
@@ -196,9 +237,26 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
   });
 
   useSpeechRecognitionEvent('result', (event) => {
-    if (!want.current || !event.isFinal) return;
+    if (!want.current) return;
     const transcript = event.results[0]?.transcript ?? '';
     if (!transcript.trim()) return;
+    if (!event.isFinal) {
+      setHeard(transcript.trim());
+      if (wakeDebounce.current) clearTimeout(wakeDebounce.current);
+      wakeDebounce.current = null;
+      if (BARE_WAKE.test(transcript)) {
+        // iOS continuous recognition can leave a one-word utterance interim
+        // indefinitely. Debounce it so a longer "Guide, take me home" still
+        // has time to arrive and be handled as one final command.
+        wakeDebounce.current = setTimeout(() => {
+          wakeDebounce.current = null;
+          activateWake();
+        }, WAKE_DEBOUNCE_MS);
+      }
+      return;
+    }
+    if (wakeDebounce.current) clearTimeout(wakeDebounce.current);
+    wakeDebounce.current = null;
     const quiet = /\bguides?\b.*\b(stop talking|quiet|silence|shut up|hush)\b/i.test(transcript);
     void (async () => {
       if (!quiet) {
@@ -209,13 +267,12 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
       const result = extractCommand(transcript, {
         awaitingConfirm: Boolean(assistantRef.current.reply?.confirm),
         followUp: Date.now() < followUpUntil.current,
+        wakeRequired: true,
       });
       if (!result) return;
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
       if (result.kind === 'wake') {
-        followUpUntil.current = Date.now() + FOLLOW_UP_MS;
-        setHeard('Guide');
-        say('Yes?');
+        activateWake();
         return;
       }
       followUpUntil.current = 0;

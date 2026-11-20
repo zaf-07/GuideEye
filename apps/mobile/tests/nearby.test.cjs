@@ -112,6 +112,18 @@ test('with the server reachable the peer link only reports proximity', async () 
   assert.strictEqual(log.left.offers.length, 0);
 });
 
+test('an already connected pair falls back to direct consent when the cloud fails', async () => {
+  const { a, b, log } = pair('blind', 'deaf', { leftConsent: false, rightConsent: false });
+  a.found('b');
+  await settle();
+  assert.strictEqual(log.left.offers.length, 0);
+  assert.strictEqual(log.right.offers.length, 0);
+  a.enableDirectConsent();
+  b.enableDirectConsent();
+  assert.strictEqual(log.left.offers.at(-1).source, 'peer');
+  assert.strictEqual(log.right.offers.at(-1).source, 'peer');
+});
+
 test('the peer bridge keeps messages in order and drops duplicates', () => {
   const sent = [];
   bridge.openPeerBridge('123456', (message) => { sent.push(message); return true; });

@@ -13,6 +13,14 @@ final class MultipeerLink: NSObject, MCSessionDelegate, MCNearbyServiceAdvertise
   private let lock = NSLock()
   private var found: [String: MCPeerID] = [:]
 
+  /// Multipeer invokes its delegates on private queues. Expo module events
+  /// cross into React Native and must be serialized on the main queue; doing
+  /// it directly made discovery appear in Bonjour while JS never reliably
+  /// received the peer/connection events.
+  private func emitOnMain(_ event: String, _ body: [String: Any]) {
+    DispatchQueue.main.async { [emit] in emit(event, body) }
+  }
+
   init(name: String, emit: @escaping (String, [String: Any]) -> Void) {
     self.peerID = MCPeerID(displayName: name)
     self.session = MCSession(peer: peerID, securityIdentity: nil, encryptionPreference: .required)
@@ -55,7 +63,7 @@ final class MultipeerLink: NSObject, MCSessionDelegate, MCNearbyServiceAdvertise
       try session.send(data, toPeers: peers, with: .reliable)
       return true
     } catch {
-      emit("onError", ["message": error.localizedDescription])
+      emitOnMain("onError", ["message": error.localizedDescription])
       return false
     }
   }
@@ -71,9 +79,16 @@ final class MultipeerLink: NSObject, MCSessionDelegate, MCNearbyServiceAdvertise
   func session(_ session: MCSession, peer peerID: MCPeerID, didChange state: MCSessionState) {
     switch state {
     case .connected:
-      emit("onConnected", ["id": peerID.displayName])
+      emitOnMain("onConnected", ["id": peerID.displayName])
+      // Repeat once after both native sessions have fully settled. The first
+      // protocol hello can otherwise race the JS onConnected event and leave
+      // two visible Bonjour peers waiting forever.
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+        guard self?.session.connectedPeers.contains(peerID) == true else { return }
+        self?.emitOnMain("onConnected", ["id": peerID.displayName])
+      }
     case .notConnected:
-      emit("onDisconnected", ["id": peerID.displayName])
+      emitOnMain("onDisconnected", ["id": peerID.displayName])
     default:
       break
     }
@@ -81,7 +96,7 @@ final class MultipeerLink: NSObject, MCSessionDelegate, MCNearbyServiceAdvertise
 
   func session(_ session: MCSession, didReceive data: Data, fromPeer peerID: MCPeerID) {
     guard let text = String(data: data, encoding: .utf8) else { return }
-    emit("onMessage", ["id": peerID.displayName, "text": text])
+    emitOnMain("onMessage", ["id": peerID.displayName, "text": text])
   }
 
   func session(_ session: MCSession, didReceive stream: InputStream, withName streamName: String, fromPeer peerID: MCPeerID) {}
@@ -99,25 +114,25 @@ final class MultipeerLink: NSObject, MCSessionDelegate, MCNearbyServiceAdvertise
   }
 
   func advertiser(_ advertiser: MCNearbyServiceAdvertiser, didNotStartAdvertisingPeer error: Error) {
-    emit("onError", ["message": error.localizedDescription])
+    emitOnMain("onError", ["message": error.localizedDescription])
   }
 
   func browser(_ browser: MCNearbyServiceBrowser, foundPeer peerID: MCPeerID, withDiscoveryInfo info: [String: String]?) {
     lock.lock()
     found[peerID.displayName] = peerID
     lock.unlock()
-    emit("onPeerFound", ["id": peerID.displayName])
+    emitOnMain("onPeerFound", ["id": peerID.displayName])
   }
 
   func browser(_ browser: MCNearbyServiceBrowser, lostPeer peerID: MCPeerID) {
     lock.lock()
     found.removeValue(forKey: peerID.displayName)
     lock.unlock()
-    emit("onPeerLost", ["id": peerID.displayName])
+    emitOnMain("onPeerLost", ["id": peerID.displayName])
   }
 
   func browser(_ browser: MCNearbyServiceBrowser, didNotStartBrowsingForPeers error: Error) {
-    emit("onError", ["message": error.localizedDescription])
+    emitOnMain("onError", ["message": error.localizedDescription])
   }
 }
 

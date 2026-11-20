@@ -42,7 +42,9 @@ export function PermissionsScreen() {
     setBusy(true);
     try {
       const results = [await Camera.requestCameraPermissionsAsync()];
-      if (hasHearingTrack(draft)) results.push(await Camera.requestMicrophonePermissionsAsync());
+      if (hasHearingTrack(draft) || hasVisionTrack(draft)) {
+        results.push(await Camera.requestMicrophonePermissionsAsync());
+      }
       if (hasVisionTrack(draft)) {
         await ExpoSpeechRecognitionModule.requestPermissionsAsync().catch(() => null);
       }

@@ -140,6 +140,7 @@ export function useNearby(enabled: boolean, role: NearbyRole | null, paused: boo
             if (failures >= CLOUD_FAILURES_BEFORE_PEER) {
               cloudHealthy.current = false;
               setFromCloud(null);
+              link.current?.enableDirectConsent();
             }
           }
         }

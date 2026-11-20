@@ -16,7 +16,7 @@ const WAKE = /\b(?:hey |okay |ok |hi )?(?:guide ?eye|guides?)\b[\s,.!?:;-]*/i;
 const CONFIRM = /^\W*(yes|yeah|yep|yup|sure|confirm|go ahead|do it|send it|send|okay|ok|no|nope|cancel|stop|not now|never mind|don't|do not)\b[\w\s,.!']{0,22}$/i;
 
 export const HELP_TEXT =
-  'Say Guide, then what you need. For example: take me to the nearest pharmacy. Take me home. ' +
+  'Say Guide, then tell me what you need. For example: take me to the nearest pharmacy. Take me home. ' +
   'Text Tom I am on my way. Call Tim. Where am I. Which way. Set a timer for ten minutes. ' +
   'In fifteen minutes take me home. What is in front of me. Read this. Remember this. Open settings. Go back. Stop talking.';
 

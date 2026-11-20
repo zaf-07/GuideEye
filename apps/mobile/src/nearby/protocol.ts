@@ -127,6 +127,19 @@ export class PeerLink {
     return this.matched;
   }
 
+  /**
+   * The cloud health check is asynchronous. A peer may have completed its
+   * hello exchange while the app still believed the server was healthy. When
+   * the radar later fails, promote that already-connected peer to the direct
+   * consent flow instead of waiting for another discovery event that may
+   * never arrive.
+   */
+  enableDirectConsent() {
+    if (this.peer && this.partnerRole === PARTNER[this.role] && !this.matched) {
+      this.publishOffer();
+    }
+  }
+
   found(peer: string) {
     if (this.peer || peer === this.me || (this.cooldown.get(peer) ?? 0) > this.now()) return;
     if (this.me < peer) this.transport.invite(peer);

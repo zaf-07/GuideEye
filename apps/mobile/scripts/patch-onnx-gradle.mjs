@@ -81,6 +81,10 @@ if (iosSource.includes(oldInstall)) {
     `#import <jsi/jsi.h>\n\n${runtimeCategory}`,
   );
   await writeFile(iosFile, withCategory.replace(oldInstall, newInstall));
-} else if (!iosSource.includes(runtimeCategory) || !iosSource.includes(newInstall)) {
+} else if (
+  !iosSource.includes(runtimeCategory) ||
+  !iosSource.includes('auto jsiRuntime = (facebook::jsi::Runtime*)rawRuntime;') ||
+  !iosSource.includes('onnxruntimejsi::install(runtime, jsiInvoker)')
+) {
   throw new Error('Could not safely apply the React Native 0.88 ONNX iOS compatibility patch.');
 }
