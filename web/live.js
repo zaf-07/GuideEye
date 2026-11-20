@@ -815,22 +815,29 @@
     el('micState').textContent = text;
     el('micState').dataset.state = kind;
   }
-  let interimTimer = null, handledText = '', handledAt = 0;
+  // Leave a generous silence window before sending a command. People often
+  // pause to think halfway through a request ("take me to… the pharmacy near
+  // my hotel"), and sending after the first pause loses the destination.
+  const SPEECH_PAUSE_MS = 2000;
+  let interimTimer = null, finalSpeechParts = [], handledText = '', handledAt = 0;
   let heardThrough = '';
   function heardNote(text, note) {
     micState('Heard' + heardThrough + ': “' + text + '”' + (note ? ' — ' + note : ''), 'on');
   }
-  function onInterim(text) {
+  function queueBrowserSpeech(interim = '') {
     clearTimeout(interimTimer);
-    if (!text) return;
-    if (activeTab === 'bridge') el('bridgeCaption').textContent = text;
-    else el('askInput').placeholder = 'Hearing: ' + text;
-    // In a noisy room the browser may never decide that the sentence has ended. Decide for it.
-    interimTimer = setTimeout(() => { handleSpeech(text); recognizer?.abort(); }, 1400);
-  }
-  function onFinal(text) {
-    clearTimeout(interimTimer);
-    handleSpeech(text);
+    const fullText = [...finalSpeechParts, interim].join(' ').trim();
+    if (!fullText) return;
+    if (activeTab === 'bridge') el('bridgeCaption').textContent = fullText;
+    else el('askInput').placeholder = 'Listening: ' + fullText;
+    // Recognition sometimes never supplies a final result in a noisy room,
+    // so silence is the reliable end-of-thought signal.
+    interimTimer = setTimeout(() => {
+      const completed = [...finalSpeechParts, interim].join(' ').trim();
+      finalSpeechParts = [];
+      el('askInput').placeholder = micPlaceholder();
+      if (completed) handleSpeech(completed);
+    }, SPEECH_PAUSE_MS);
   }
   function handleSpeech(text, source) {
     el('askInput').placeholder = micPlaceholder();
@@ -889,9 +896,9 @@
       let interim = '';
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const text = e.results[i][0].transcript.trim();
-        if (e.results[i].isFinal) onFinal(text); else interim += text + ' ';
+        if (e.results[i].isFinal) finalSpeechParts.push(text); else interim += text + ' ';
       }
-      onInterim(interim.trim());
+      queueBrowserSpeech(interim.trim());
     };
     r.onerror = e => {
       if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
