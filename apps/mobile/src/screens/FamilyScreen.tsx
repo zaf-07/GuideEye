@@ -1,18 +1,23 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { StyleSheet, TextInput, View } from 'react-native';
+import { StyleSheet, Switch, TextInput, View } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { Button, Display, GlassCard, RoundButton, Screen, Text } from '../components';
 import { addContact, assistantConfigured, listContacts, removeContact, type Contact } from '../assistant';
 import { useAssistant } from '../useAssistant';
+import { useProfile } from '../state/ProfileContext';
+import { announce } from '../lib/announce';
 import { colors, HIT, radius, spacing } from '../theme/tokens';
 
 export function FamilyScreen() {
   const { reply, busy, error, ask, setError } = useAssistant();
+  const { profile } = useProfile();
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [saving, setSaving] = useState(false);
+  const [guardianActive, setGuardianActive] = useState(false);
   const configured = assistantConfigured();
 
   const refresh = useCallback(async () => {
@@ -55,6 +60,17 @@ export function FamilyScreen() {
     }
   };
 
+  const toggleGuardian = (active: boolean) => {
+    setGuardianActive(active);
+    if (active) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      announce(profile, 'Guardian live sharing enabled for this journey.', { urgent: true });
+    } else {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+      announce(profile, 'Guardian sharing disabled.', { urgent: true });
+    }
+  };
+
   return (
     <Screen>
       <View style={styles.bar}>
@@ -65,6 +81,30 @@ export function FamilyScreen() {
       <Text variant="body" muted>
         Share where you are or call someone with one tap. Nothing is sent until you say yes.
       </Text>
+
+      <GlassCard strong>
+        <View style={styles.row}>
+          <View style={styles.fill}>
+            <Text variant="caption" style={{ color: colors.lime, fontWeight: '700' }}>GUARDIAN</Text>
+            <Text variant="section">Share this journey</Text>
+            <Text variant="caption" muted>
+              Let a trusted contact see your live trip until you arrive safely.
+            </Text>
+          </View>
+          <Switch
+            value={guardianActive}
+            onValueChange={toggleGuardian}
+            trackColor={{ true: colors.lime, false: 'rgba(255,255,255,0.2)' }}
+            accessibilityLabel="Guardian live trip sharing toggle"
+          />
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: spacing.xs }}>
+          <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: guardianActive ? colors.lime : colors.textFaint }} />
+          <Text variant="caption" style={{ color: guardianActive ? colors.lime : colors.textFaint, fontWeight: '600' }}>
+            {guardianActive ? 'Live Sharing Active' : 'Off'}
+          </Text>
+        </View>
+      </GlassCard>
 
       {!configured ? (
         <GlassCard>

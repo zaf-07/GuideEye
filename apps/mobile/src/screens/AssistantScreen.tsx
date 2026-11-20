@@ -3,10 +3,13 @@ import { StyleSheet, TextInput, View } from 'react-native';
 import * as Linking from 'expo-linking';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { Button, Chip, Display, GlassCard, RoundButton, Screen, Text } from '../components';
 import { assistantConfigured } from '../assistant';
 import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from '../speechRecognition';
 import { useVoice } from '../voice/VoiceControl';
+import { useProfile } from '../state/ProfileContext';
+import { announce } from '../lib/announce';
 import { colors, HIT, radius, spacing } from '../theme/tokens';
 
 const TURN_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
@@ -43,12 +46,31 @@ const SUGGESTIONS = [
 export function AssistantScreen() {
   const params = useLocalSearchParams<{ prompt?: string }>();
   const voice = useVoice();
+  const { profile } = useProfile();
   const { reply, busy, error, navigating, guide, ask, setError } = voice.assistant;
   const handsFree = voice.handsFree;
   const [text, setText] = useState('');
   const [listening, setListening] = useState(false);
+  const [whispering, setWhispering] = useState(false);
   const started = useRef(false);
   const configured = assistantConfigured();
+
+  const runMicroWhisperDemo = async () => {
+    if (whispering) return;
+    setWhispering(true);
+    const cues = [
+      { word: 'Left', haptic: Haptics.ImpactFeedbackStyle.Medium, delay: 1500 },
+      { word: 'Forward', haptic: Haptics.ImpactFeedbackStyle.Light, delay: 1500 },
+      { word: 'Right', haptic: Haptics.ImpactFeedbackStyle.Medium, delay: 1500 },
+      { word: 'Stop!', haptic: Haptics.ImpactFeedbackStyle.Heavy, delay: 1800 },
+    ];
+    for (const cue of cues) {
+      Haptics.impactAsync(cue.haptic).catch(() => {});
+      announce(profile, cue.word, { urgent: true });
+      await new Promise((r) => setTimeout(r, cue.delay));
+    }
+    setWhispering(false);
+  };
 
   useEffect(() => {
     if (started.current || !params.prompt || !configured) return;
@@ -238,6 +260,27 @@ export function AssistantScreen() {
           <Button label="Stop navigation" tone="glass" disabled={busy} onPress={() => void ask('Stop navigation')} />
         </GlassCard>
       ) : null}
+
+      <GlassCard>
+        <View style={styles.row}>
+          <Ionicons name="flash-outline" size={22} color={colors.lime} />
+          <View style={styles.fill}>
+            <Text variant="section">Micro-whisper Tactile Cues</Text>
+            <Text variant="caption" muted>
+              Directional haptic pulses with spatial voice guidance
+            </Text>
+          </View>
+        </View>
+        <Button
+          label={whispering ? 'Demonstrating cues…' : 'Play Micro-whisper Demo'}
+          tone="lime"
+          disabled={whispering}
+          onPress={() => void runMicroWhisperDemo()}
+          hint="Plays sequential Left, Forward, Right, and Stop haptic directional cues."
+          style={{ marginTop: spacing.sm }}
+          icon={<Ionicons name="volume-high-outline" size={18} color={colors.onLight} />}
+        />
+      </GlassCard>
 
       <Text variant="label" muted>
         Try
