@@ -10,6 +10,10 @@ services:
     envVars:
       - key: BAND_AUTOCONNECT
         value: "false"
+      # The lightweight hosted image uses the cloud vision fallback. Local
+      # development and the mobile/web clients retain their bundled detectors.
+      - key: ULTRALYTICS_YOLO_ENABLED
+        value: "false"
       - key: SPEECH_VOICE
         value: elevenlabs
       - key: ELEVENLABS_API_KEY

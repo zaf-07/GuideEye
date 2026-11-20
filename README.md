@@ -46,7 +46,7 @@ This table is the honest state of the repository, not the pitch.
 | Desktop shell (`desktop/`) | Built |
 | FastAPI service (`backend/`): command planning, tasks, events | Built |
 | Vexo USB + Bluetooth probe (`scripts/vexo_probe.py`) | Built, read-only |
-| See — local YOLO hazard warnings plus a Gemini scene description, with fallbacks | Built: `POST /vision/analyze`, live in the demo |
+| See — on-device YOLO hazard warnings plus a cloud scene description, with fallbacks | Built: mobile/web use bundled ONNX models; local server development can enable Ultralytics YOLO; hosted Render uses the cloud fallback |
 | Remember — private text-only memory and recall | Built: `/memory`, "Where did I leave my keys?" in the demo |
 | Act — payment gated by a spoken yes | Built: quote, then pay only on yes. Simulated unless a Stripe **test** key is set; live keys are refused |
 | Errands — "Read this letter and tell me what to do", "Explain this discharge summary" | Built: a HarnessRouter agent does the multi-step work in the background and the answer is spoken. It prepares and never sends; a spoken yes continues the same task. Needs `HR_API_KEY` in `backend/.env`; check it with `python scripts/errand_check.py` |

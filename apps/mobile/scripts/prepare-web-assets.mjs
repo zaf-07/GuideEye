@@ -27,9 +27,10 @@ for (const name of [
 }
 
 // Sign tracking (MediaPipe) is served by the app itself so the bridge and sign
-// mode keep working with no internet ("pull the plug"). The runtime comes from
-// node_modules; the model files are downloaded once into a local cache. If a
-// download fails, the app falls back to the public CDN at runtime.
+// mode keep working with no internet ("pull the plug"). Keep the models in
+// assets/ so production builds are reproducible and do not depend on a CDN.
+// The cache remains only as a convenient one-time download source for a
+// developer who has not checked the assets into a project yet.
 const mediapipeDir = join(publicDir, 'mediapipe');
 await mkdir(join(mediapipeDir, 'wasm'), { recursive: true });
 await mkdir(join(mediapipeDir, 'models'), { recursive: true });
@@ -53,10 +54,16 @@ const mediapipeModels = {
   'holistic_landmarker.task': 'holistic_landmarker/holistic_landmarker/float16/1/holistic_landmarker.task',
 };
 const modelCache = join(mobile, '.cache', 'mediapipe');
+const bundledModels = join(mobile, 'assets', 'mediapipe');
 await mkdir(modelCache, { recursive: true });
 const exists = (path) => access(path).then(() => true, () => false);
 for (const [name, remote] of Object.entries(mediapipeModels)) {
+  const bundled = join(bundledModels, name);
   const cached = join(modelCache, name);
+  if (await exists(bundled)) {
+    await cp(bundled, join(mediapipeDir, 'models', name));
+    continue;
+  }
   if (!(await exists(cached)) && process.env.MEDIAPIPE_OFFLINE_MODELS !== 'false') {
     try {
       const response = await fetch(`https://storage.googleapis.com/mediapipe-models/${remote}`);
