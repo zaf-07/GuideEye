@@ -47,6 +47,8 @@ class RouteTests(unittest.TestCase):
             'Call Alex': 'call',
             'Open WhatsApp': 'open_app',
             'I want to make a new contact': 'contact_add',
+            'Can you add a phone contact': 'contact_add',
+            '1600 Amphitheatre Parkway Mountain View': 'navigate',
             'yes': 'nothing_pending',
         }
         for text, intent in cases.items():

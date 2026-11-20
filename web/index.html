@@ -236,6 +236,7 @@
                 <button class="btn btn-glass glass btn-small" id="routeOverview" type="button">Whole route</button>
                 <button class="btn btn-glass glass btn-small" id="routeRotate" type="button">North up</button>
                 <button class="btn btn-glass glass btn-small" id="routeBig" type="button">Larger text</button>
+                <a class="btn btn-glass glass btn-small" id="routeExternal" href="#" target="_blank" rel="noopener" hidden>Open in Google Maps</a>
                 <button class="btn btn-glass glass btn-small" id="routeMapClose" type="button">Hide map</button>
                 <button class="btn btn-glass glass btn-small route-stop" id="routeStop" type="button">Stop directions</button>
               </div>
@@ -412,6 +413,8 @@
               <label class="toggle"><input type="checkbox" id="wakeToggle"><span>Only act when I say “Guide” first (for noisy rooms)</span></label>
               <label class="toggle"><input type="checkbox" id="hazardToggle" checked><span>Speak hazard warnings</span></label>
               <label class="toggle"><input type="checkbox" id="voiceToggle" checked><span>Speak replies</span></label>
+              <button class="link-inline" type="button" id="voiceTest">Test assistant voice</button>
+              <p class="hint" id="voiceState" role="status">Voice replies are on.</p>
               <label class="toggle"><input type="checkbox" id="bargeToggle" checked><span>Let me interrupt the assistant through the band</span></label>
               <label class="toggle"><input type="checkbox" id="autoDescribe"><span>Tell me when the scene changes</span></label>
               <label class="toggle"><input type="checkbox" id="locationToggle"><span>Use my location for directions and memory</span></label>
@@ -527,6 +530,6 @@
   <script src="api-config.js?v=1"></script>
   <script src="landing.js?v=6"></script>
   <script src="signs.js?v=23"></script>
-  <script src="live.js?v=44"></script>
+  <script src="live.js?v=45"></script>
 </body>
 </html>

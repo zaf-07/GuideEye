@@ -131,14 +131,19 @@ PLACE_GO = re.compile(
 )
 CALL = re.compile(r'\b(?:call|dial|phone)\s+(?:my\s+)?([a-z][a-z0-9 .-]{1,39})\b', re.IGNORECASE)
 CONTACT_ADD = re.compile(
-    r'\b(?:add|create|make|save|new)\s+(?:a\s+)?(?:new\s+)?(?:whatsapp\s+)?contact\b'
-    r'|\b(?:i want|i need)\s+(?:to\s+)?(?:add|create|make)\s+(?:a\s+)?(?:new\s+)?contact\b', re.IGNORECASE)
+    r'\b(?:add|create|make|save|new)\s+(?:a\s+)?(?:new\s+)?(?:(?:phone|whatsapp)\s+)?contact\b'
+    r'|\b(?:i want|i need)\s+(?:to\s+)?(?:add|create|make)\s+(?:a\s+)?(?:new\s+)?(?:(?:phone|whatsapp)\s+)?contact\b', re.IGNORECASE)
 OPEN_APP = re.compile(r'^\W*(?:open|launch|start)\s+(?:the\s+)?(whatsapp|messages|maps|facetime|calendar)\b', re.IGNORECASE)
 BRIDGE = re.compile(r'\bbridge\b')
 NAV = re.compile(
     r'\b(take|guide|walk|navigate|lead|bring|get) me to\b|\b(directions?|route|way) to\b'
     r'|\bhow do i get to\b|\bnavigate to\b|\b(nearest|closest)\b'
 )
+# A complete street address is a useful spoken destination even when the
+# person does not say "directions to" first.  Keep this deliberately strict:
+# a house number followed by at least two words avoids treating short numbers
+# and phone numbers as map searches.
+DIRECT_ADDRESS = re.compile(r'^\s*\d{1,6}[\w-]*(?:\s+[a-z][a-z.\'-]*){2,}(?:\s*,?\s*[a-z][a-z .\'-]*)?\s*[.!?]?\s*$', re.IGNORECASE)
 # "Find a pharmacy open now", "is there a cafe nearby", "where is the bathroom".
 NEARBY_PLACE = re.compile(
     r"\b(?:find|locate|look for|where is|where's|is there|are there)\s+(?:me\s+)?(?:a |an |the |any )?(?:nearest |closest |nearby )?(?:"
@@ -256,7 +261,7 @@ def route(text: str, has_pending: bool = False, navigating: bool = False) -> str
         return 'call'
     if OPEN_APP.search(value):
         return 'open_app'
-    if NAV.search(value) or NEARBY_PLACE.search(value):
+    if NAV.search(value) or NEARBY_PLACE.search(value) or DIRECT_ADDRESS.match(value):
         return 'navigate'
     if SCAN_PAY.search(value):
         return 'scan_pay'
@@ -816,7 +821,8 @@ class Assistant:
         else:
             match = PLACE_SET.search(value)
             other = route(text)
-            if not match and other not in ('see', 'nothing_pending', 'place_set'):
+            is_direct_address = bool(DIRECT_ADDRESS.match(value))
+            if not match and other not in ('see', 'nothing_pending', 'place_set') and not is_direct_address:
                 # A different request ("take me to the supermarket"): leave the address alone and do that instead.
                 del self._place_changes[session]
                 return await self.respond(session, text, None, 'image/jpeg', location)

@@ -284,6 +284,13 @@
     clearTimeout(guide.hideTimer);
     guide.route = route; guide.nav = null;
     mapDestination = { lat: route.destination.lat, lon: route.destination.lon };
+    const external = el('routeExternal');
+    if (external) {
+      external.href = 'https://www.google.com/maps/dir/?api=1&travelmode=walking&origin='
+        + encodeURIComponent(position.lat + ',' + position.lon) + '&destination='
+        + encodeURIComponent(route.destination.lat + ',' + route.destination.lon);
+      external.hidden = false;
+    }
     el('routeDest').textContent = route.destination.name;
     el('routeRemaining').textContent = '';
     el('routeBar').style.width = '0%';
@@ -299,6 +306,7 @@
     clearTimeout(guide.hideTimer);
     guide.route = guide.nav = null; mapDestination = null;
     el('routeMap').hidden = true;
+    if (el('routeExternal')) el('routeExternal').hidden = true;
     el('routeMapFrame').src = 'about:blank';
   }
   function updateGuide(nav) {
@@ -366,16 +374,18 @@
   let lastReplyAt = 0, lastSpeechEnd = 0, cloudVoice = false, cloudPlaying = false, cloudVoiceRetryAt = 0;
   const buzz = pattern => { try { navigator.vibrate?.(pattern); } catch {} };
   const player = new Audio();
-  const isSpeaking = () => cloudPlaying || speechSynthesis.speaking;
+  const hasLocalVoice = () => 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window;
+  const setVoiceState = text => { if (el('voiceState')) el('voiceState').textContent = text; };
+  const isSpeaking = () => cloudPlaying || Boolean(window.speechSynthesis?.speaking);
   let lastReplyEnd = 0;
   /** True while a reply is being spoken (not a short hazard warning). */
-  const replyTalking = () => cloudPlaying || (replySpeaking && speechSynthesis.speaking);
+  const replyTalking = () => cloudPlaying || (replySpeaking && Boolean(window.speechSynthesis?.speaking));
   /** Tell the service the assistant is talking, so the band does not pass that voice back as a request. */
   let replySpeaking = false, bandMuted = false;
   // Once a second: mute the band only while a reply is really being spoken. The mute expires by itself
   // on the service, so it can never get stuck and leave the band deaf.
   setInterval(() => {
-    const speaking = cloudPlaying || (replySpeaking && speechSynthesis.speaking);
+    const speaking = cloudPlaying || (replySpeaking && Boolean(window.speechSynthesis?.speaking));
     if (speaking) muteBand(true);
     else if (bandMuted) muteBand(false);
     bandMuted = speaking;
@@ -389,7 +399,7 @@
   }
   function stopSpeaking() {
     replySpeaking = false;
-    speechSynthesis.cancel();
+    window.speechSynthesis?.cancel();
     player.pause();
     cloudPlaying = false;
   }
@@ -404,16 +414,26 @@
     player.onerror = done;
     player.src = url;
     cloudPlaying = true;
-    try { await player.play(); } catch (error) { done(); throw error; }
+    try { await player.play(); setVoiceState('Speaking with the configured AI voice.'); } catch (error) { done(); throw error; }
   }
   function speakLocal(text, warning) {
+    if (!hasLocalVoice()) {
+      setVoiceState('Voice output is unavailable in this browser. Try a current version of Chrome, Safari, or Edge.');
+      return false;
+    }
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = 'en-US';
     utterance.rate = warning ? 1.08 : 1;
+    const voices = window.speechSynthesis.getVoices();
+    const english = voices.find(voice => /^en(?:[-_]|$)/i.test(voice.lang));
+    if (english) utterance.voice = english;
     utterance.onstart = () => { replySpeaking = !warning; };
     utterance.onend = () => { lastSpeechEnd = Date.now(); if (replySpeaking) lastReplyEnd = Date.now(); if (replySpeaking && bandMuted) { muteBand(false); bandMuted = false; } replySpeaking = false; };
-    utterance.onerror = () => { replySpeaking = false; };
-    speechSynthesis.speak(utterance);
+    utterance.onerror = () => { replySpeaking = false; setVoiceState('The device voice could not start. Use “Test assistant voice” after allowing sound for this site.'); };
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(utterance);
+    setVoiceState('Speaking with your device voice.');
+    return true;
   }
   const plain = text => text.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
   const recentlySpoken = [];
@@ -450,7 +470,7 @@
     return '';
   }
   function speak(text, { warning = false, force = false } = {}) {
-    if (!('speechSynthesis' in window) || !text) return;
+    if (!text) return;
     recentlySpoken.push({ text: plain(text), at: Date.now() });
     if (recentlySpoken.length > 6) recentlySpoken.shift();
     if (warning) {
@@ -462,11 +482,21 @@
       lastReplyAt = Date.now();
       if (cloudVoice && Date.now() > cloudVoiceRetryAt) {
         // If the voice service fails (for example, out of credits), use the local voice and retry later.
-        return void speakCloud(text).catch(() => { cloudVoiceRetryAt = Date.now() + 120000; speakLocal(text, false); });
+        return void speakCloud(text).catch(() => {
+          cloudVoiceRetryAt = Date.now() + 120000;
+          setVoiceState('AI voice could not start, so GuideEye is using your device voice.');
+          speakLocal(text, false);
+        });
       }
     }
     speakLocal(text, warning);
   }
+  // This direct gesture also unlocks audio in browsers that block a first
+  // streamed reply until the person has interacted with the page.
+  el('voiceTest').onclick = () => {
+    window.speechSynthesis?.resume();
+    speak('GuideEye voice is working. I can read directions and help add contacts.', { force: true });
+  };
 
   // ---------- Camera ----------
   const video = el('liveVideo'), overlay = el('liveOverlay'), stage = video.parentElement;
