@@ -97,6 +97,7 @@ class ErrandTests(unittest.TestCase):
         self.assertEqual(reply['intent'], 'web_lookup')
         self.assertEqual(errands.waited, [8.0])
         self.assertIn('Search the public web', errands.started[0]['text'])
+        self.assertIn('Stop immediately after one blocked page', errands.started[0]['text'])
         self.assertIn('automatically', reply['say'])
 
     def test_yes_continues_the_same_task_and_no_drops_it(self):

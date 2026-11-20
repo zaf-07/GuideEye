@@ -814,7 +814,10 @@ class Assistant:
             'Search the public web for current information to answer this GuideEye user request: ' + text + '\n'
             'If an image is included, use it to identify the item. For a price, give one current price, the currency, '
             'the retailer or source, and say that prices can change. Do not purchase anything or ask for payment. '
-            'Keep the answer to two short sentences suitable for speech.'
+            'Use one focused search and at most two sources. Stop immediately after one blocked page or after 30 seconds; '
+            'do not retry, broaden the search repeatedly, or wait for inaccessible retailer pages. If you cannot verify a '
+            'price quickly, say which detail is needed or that you could not verify it. Keep the answer to two short '
+            'sentences suitable for speech.'
         )
         await self._errand(reply, session, text, request, image, mime,
                            wait_seconds=float(os.getenv('WEB_LOOKUP_WAIT_SECONDS', '8')))
