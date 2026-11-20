@@ -49,6 +49,8 @@ class RouteTests(unittest.TestCase):
             'I want to make a new contact': 'contact_add',
             'Can you add a phone contact': 'contact_add',
             '1600 Amphitheatre Parkway Mountain View': 'navigate',
+            'What is the weather in Seattle?': 'weather',
+            'What is the price of this object?': 'web_lookup',
             'yes': 'nothing_pending',
         }
         for text, intent in cases.items():

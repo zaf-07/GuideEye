@@ -17,7 +17,7 @@ import time
 from collections import deque
 from urllib.parse import quote
 
-from . import checkout, errand, messaging, navigation, vision
+from . import checkout, errand, live_info, messaging, navigation, vision
 from .memory import Memory
 from .payments import Orders, PaymentError
 
@@ -172,6 +172,11 @@ ERRAND = re.compile(
     r"|\b(?:explain|summari[sz]e|summary)\b|\bhelp me understand\b"
     r"|\bwhat (?:do|should|must) i (?:need to |have to )?do\b|\bwhat does (?:this|that|it) (?:mean|ask|want)\b"
     r"|\btell me what (?:to do|i (?:need|have) to do|(?:this|that|it) (?:means|asks|wants))\b"
+)
+WEATHER = re.compile(r'\b(?:weather|forecast|temperature|will it rain|is it raining)\b', re.IGNORECASE)
+WEB_LOOKUP = re.compile(
+    r'\b(?:price of|how much (?:is|does)|what(?:\'s| is) (?:the )?(?:price|cost)|what does .+ cost|search (?:the )?(?:web|internet)|look (?:this|that|it) up online)\b',
+    re.IGNORECASE,
 )
 ERRAND_STATUS = re.compile(r"\berrand\b|\b(?:is it|is that|are you) (?:ready|done|finished)\b|\bany (?:update|news)\b|\bstill working\b")
 ERRAND_ASKS = re.compile(r"should i go ahead\?\s*$", re.IGNORECASE)
@@ -390,6 +395,10 @@ def route(text: str, has_pending: bool = False, navigating: bool = False) -> str
         return 'navigate'
     if SCAN_PAY.search(value):
         return 'scan_pay'
+    if WEATHER.search(value):
+        return 'weather'
+    if WEB_LOOKUP.search(value):
+        return 'web_lookup'
     if PAY.search(value):
         return 'pay_quote'
     if ERRAND.search(value) and not REMEMBER.search(value):
@@ -631,6 +640,10 @@ class Assistant:
             await self._start_place_change(reply, session, text, location)
         elif intent == 'timer':
             self._timer(reply, text)
+        elif intent == 'weather':
+            await self._weather(reply, text, location)
+        elif intent == 'web_lookup':
+            await self._web_lookup(reply, session, text, image, mime)
         elif intent == 'place_go':
             before = self.navigator.active(session)
             reply['say'] = await self._go_to_place(session, text, location)
@@ -785,6 +798,21 @@ class Assistant:
             self.memory.add_note('errand', f'Errand "{request}": {answer}')
         else:
             reply['say'] = 'I could not finish that errand. Nothing was sent or changed.'
+
+    async def _weather(self, reply: dict, text: str, location: tuple[float, float] | None) -> None:
+        try:
+            reply.update(say=await live_info.weather(text, location), provider='weather')
+        except live_info.LiveInfoError as error:
+            reply['say'] = str(error)
+
+    async def _web_lookup(self, reply: dict, session: str, text: str, image: bytes | None, mime: str) -> None:
+        request = (
+            'Search the public web for current information to answer this GuideEye user request: ' + text + '\n'
+            'If an image is included, use it to identify the item. For a price, give one current price, the currency, '
+            'the retailer or source, and say that prices can change. Do not purchase anything or ask for payment. '
+            'Keep the answer to two short sentences suitable for speech.'
+        )
+        await self._errand(reply, session, text, request, image, mime)
 
     # ----- pay -----
 

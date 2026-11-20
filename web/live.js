@@ -621,7 +621,7 @@
   }
 
   // ---------- See: continuous local hazard warnings ----------
-  const sources = { gemini: 'Gemini', groq: 'Groq', llm: 'language model', local: 'on-device', harnessrouter: 'HarnessRouter agent' };
+  const sources = { gemini: 'Gemini', groq: 'Groq', llm: 'language model', local: 'on-device', harnessrouter: 'web research', weather: 'Open-Meteo live weather' };
   const spokenAt = new Map(), seenAt = new Map(), waiting = new Set();
   let looping = false, busy = false, personSeenAt = 0;
   let candidateKey = '', stable = 0, narratedKey = '', narratedAt = 0;
