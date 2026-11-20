@@ -373,7 +373,19 @@
   // always use the browser's local voice: instant, and no network to wait for.
   let lastReplyAt = 0, lastSpeechEnd = 0, cloudVoice = false, cloudPlaying = false, cloudVoiceRetryAt = 0;
   const buzz = pattern => { try { navigator.vibrate?.(pattern); } catch {} };
-  const player = new Audio();
+  // Safari and mobile Chrome commonly reject HTMLAudioElement.play() after
+  // the ElevenLabs fetch has completed, even when the original request began
+  // with a tap.  An AudioContext resumed during that tap remains usable when
+  // the MP3 arrives, so spoken replies do not disappear silently.
+  let audioContext = null, cloudSource = null;
+  function unlockAudio() {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return false;
+    if (!audioContext) audioContext = new AudioContextClass();
+    audioContext.resume?.().catch(() => {});
+    return audioContext.state === 'running';
+  }
+  document.addEventListener('pointerdown', unlockAudio, { passive: true });
   const hasLocalVoice = () => 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window;
   const setVoiceState = text => { if (el('voiceState')) el('voiceState').textContent = text; };
   const isSpeaking = () => cloudPlaying || Boolean(window.speechSynthesis?.speaking);
@@ -400,7 +412,10 @@
   function stopSpeaking() {
     replySpeaking = false;
     window.speechSynthesis?.cancel();
-    player.pause();
+    if (cloudSource) {
+      try { cloudSource.stop(); } catch {}
+      cloudSource = null;
+    }
     cloudPlaying = false;
   }
   async function speakCloud(text) {
@@ -408,13 +423,17 @@
     body.append('text', text);
     const response = await fetch(api + '/speech', { method: 'POST', body });
     if (!response.ok) throw new Error('voice unavailable');
-    const url = URL.createObjectURL(await response.blob());
-    const done = () => { cloudPlaying = false; lastSpeechEnd = lastReplyEnd = Date.now(); URL.revokeObjectURL(url); if (bandMuted) { muteBand(false); bandMuted = false; } };
-    player.onended = done;
-    player.onerror = done;
-    player.src = url;
+    if (!unlockAudio() || audioContext.state !== 'running') throw new Error('audio needs a user gesture');
+    const audio = await response.arrayBuffer();
+    const buffer = await audioContext.decodeAudioData(audio);
+    const done = () => { cloudPlaying = false; cloudSource = null; lastSpeechEnd = lastReplyEnd = Date.now(); if (bandMuted) { muteBand(false); bandMuted = false; } };
+    const source = audioContext.createBufferSource();
+    source.buffer = buffer;
+    source.connect(audioContext.destination);
+    source.onended = done;
+    cloudSource = source;
     cloudPlaying = true;
-    try { await player.play(); setVoiceState('Speaking with the configured AI voice.'); } catch (error) { done(); throw error; }
+    try { source.start(); setVoiceState('Speaking with the ElevenLabs voice.'); } catch (error) { done(); throw error; }
   }
   function speakLocal(text, warning) {
     if (!hasLocalVoice()) {
@@ -494,6 +513,7 @@
   // This direct gesture also unlocks audio in browsers that block a first
   // streamed reply until the person has interacted with the page.
   el('voiceTest').onclick = () => {
+    unlockAudio();
     window.speechSynthesis?.resume();
     speak('GuideEye voice is working. I can read directions and help add contacts.', { force: true });
   };
