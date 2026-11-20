@@ -9,7 +9,7 @@ import json
 
 from . import llm
 
-MIN_CONFIDENCE = 0.6
+MIN_CONFIDENCE = 0.75
 MAX_FRAMES = 3
 
 # A fixed, task-specific vocabulary is substantially safer than open-ended
@@ -79,6 +79,8 @@ SIGN_PROMPT = (
     'in American Sign Language. Choose the ONE sign from this list that best matches, or none:\n'
     + '\n'.join(f'- "{word}": {how}' for word, how in VOCABULARY.items())
     + '\nReply with JSON only: {"text": "<exactly one phrase from the list, or empty>", "confidence": <0 to 1>}. '
+    'Return an empty text unless a real human hand is clearly visible in every frame and its handshape or motion '
+    'matches one entry. Icons, drawings, letters, objects, and ordinary gestures are not signs. '
     'If no hands are raised, nobody is signing, or nothing on the list clearly matches, '
     'use an empty text and a low confidence. Never guess.'
 )
@@ -100,7 +102,14 @@ def parse_reading(raw: str) -> dict:
 
 
 async def read_sign(frames: list[tuple[bytes, str]]) -> dict:
-    parts = [llm.image_part(image, mime) for image, mime in frames[:MAX_FRAMES]]
+    # A single still image (or duplicate uploads) cannot establish signing
+    # motion and made the cloud model confidently mislabel ordinary icons as
+    # signs. The live reader already supplies a short camera sequence.
+    usable = frames[:MAX_FRAMES]
+    if len(usable) < 2 or len({image for image, _ in usable}) < 2:
+        return {'text': '', 'confidence': 0.0, 'provider': None, 'experimental': True,
+                'reason': 'multiple_distinct_frames_required'}
+    parts = [llm.image_part(image, mime) for image, mime in usable]
     parts.append({'text': SIGN_PROMPT})
     try:
         reading = parse_reading(await llm.complete(parts, json_mode=True, timeout=8.0))

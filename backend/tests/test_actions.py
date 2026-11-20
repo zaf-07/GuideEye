@@ -181,6 +181,13 @@ class SignVocabularyTests(unittest.TestCase):
                      'go', 'school', 'tomorrow', 'we', 'play', 'basketball', 'please', 'help', 'find', 'book'):
             self.assertEqual(bridge.parse_reading(f'{{"text": "{word}", "confidence": 0.9}}')['text'], word)
 
+    def test_cloud_reader_refuses_a_single_or_duplicate_frame(self):
+        single = run(bridge.read_sign([(b'one-frame', 'image/jpeg')]))
+        duplicate = run(bridge.read_sign([(b'same-frame', 'image/jpeg'), (b'same-frame', 'image/jpeg')]))
+        self.assertEqual(single['text'], '')
+        self.assertEqual(duplicate['text'], '')
+        self.assertEqual(single['reason'], 'multiple_distinct_frames_required')
+
     def test_focused_asl_sequences_translate_in_asl_order(self):
         examples = {
             ('I / me', 'want', 'water'): 'I want water.',
