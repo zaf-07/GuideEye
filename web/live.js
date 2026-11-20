@@ -624,8 +624,11 @@
             // Narrate only when what is in view has changed and stayed changed.
             const key = [...new Set(scene.detections.filter(d => d.area >= 0.02).map(d => d.label))].sort().join(',');
             if (key === candidateKey) stable++; else { candidateKey = key; stable = 0; }
+            // Vision providers can rate-limit image calls. Keep the automatic
+            // narration useful without consuming the quota needed for an
+            // explicit "what is in front of me?" request.
             if (el('autoDescribe').checked && activeTab !== 'bridge' && key && stable >= 2 && key !== narratedKey
-                && Date.now() - narratedAt > 12000 && !busy && !isSpeaking()) {
+                && Date.now() - narratedAt > 30000 && !busy && !isSpeaking()) {
               narratedKey = key; narratedAt = Date.now();
               narrate(blob);
             }
