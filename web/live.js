@@ -774,7 +774,7 @@
         if (reply.errand.status === 'in_progress') return watchErrand(id, tries + 1);
         showReply(reply, '');
       } catch (error) { watchErrand(id, tries + 1); }
-    }, 8000);
+    }, 3000);
   }
 
   let queued = '';

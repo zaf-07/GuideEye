@@ -762,14 +762,18 @@ class Assistant:
     # ----- errands -----
 
     async def _errand(self, reply: dict, session: str, request: str, text: str, image: bytes | None, mime: str,
-                      previous: dict | None = None) -> None:
+                      previous: dict | None = None, wait_seconds: float | None = None) -> None:
         if not self.errands.configured():
             reply['say'] = 'Errands are not set up on this device yet.'
             return
         try:
             task = await self.errands.start(text, f'guideeye-{session}', image, mime, previous)
             if not task['done']:
-                task = await self.errands.wait(task['id'], float(os.getenv('ERRAND_WAIT_SECONDS', '45')))
+                # General document errands can take a little longer. Live web
+                # research should return control quickly and keep searching in
+                # the background rather than holding the conversation open.
+                seconds = wait_seconds if wait_seconds is not None else float(os.getenv('ERRAND_WAIT_SECONDS', '45'))
+                task = await self.errands.wait(task['id'], seconds)
         except errand.ErrandError:
             reply['say'] = 'I could not reach the errand agent. Please try again in a moment.'
             return
@@ -812,7 +816,8 @@ class Assistant:
             'the retailer or source, and say that prices can change. Do not purchase anything or ask for payment. '
             'Keep the answer to two short sentences suitable for speech.'
         )
-        await self._errand(reply, session, text, request, image, mime)
+        await self._errand(reply, session, text, request, image, mime,
+                           wait_seconds=float(os.getenv('WEB_LOOKUP_WAIT_SECONDS', '8')))
 
     # ----- pay -----
 

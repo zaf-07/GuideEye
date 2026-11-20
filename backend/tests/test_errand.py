@@ -22,6 +22,7 @@ class FakeErrands:
         self.answers = list(answers)
         self.ready = ready
         self.started = []
+        self.waited = []
         self.fail = False
 
     def configured(self):
@@ -38,6 +39,7 @@ class FakeErrands:
         return self._task('in_progress')
 
     async def wait(self, response_id, seconds):
+        self.waited.append(seconds)
         status, text = self.answers.pop(0)
         return self._task(status, text)
 
@@ -88,6 +90,13 @@ class ErrandTests(unittest.TestCase):
         self.assertEqual(second['intent'], 'errand_status')
         self.assertEqual(second['say'], 'The letter asks you to renew by May.')
         self.assertEqual(len(errands.started), 1)
+
+    def test_web_research_returns_control_after_eight_seconds(self):
+        errands = FakeErrands([('completed', 'The current price is 10 dollars at Example Store.')])
+        reply = run(self.assistant(errands).respond('s1', 'What is the price of this object?'))
+        self.assertEqual(reply['intent'], 'web_lookup')
+        self.assertEqual(errands.waited, [8.0])
+        self.assertIn('Search the public web', errands.started[0]['text'])
 
     def test_yes_continues_the_same_task_and_no_drops_it(self):
         errands = FakeErrands([('completed', 'I drafted a reply. Should I go ahead?'), ('completed', 'The draft is ready.')])
