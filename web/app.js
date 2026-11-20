@@ -3,7 +3,7 @@
   const $ = s => document.querySelector(s);
   const store = { get: key => { try { return localStorage.getItem(key); } catch { return null; } }, set: (key, value) => { try { localStorage.setItem(key, value); } catch {} } };
   const requestedApi = new URLSearchParams(location.search).get('api');
-  let API = (requestedApi ?? store.get('guideband_api') ?? '').replace(/\/$/, '');
+  let API = (requestedApi ?? store.get('guideband_api') ?? window.GUIDEEYE_API_URL ?? '').replace(/\/$/, '');
 
   function showService(online, detail) {
     const dot = $('#serviceDot');

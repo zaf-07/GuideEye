@@ -7,7 +7,7 @@
   // ---------- Service connection ----------
   const store = { get: k => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
   const sameOrigin = location.port === '8000'; // page is served by the service itself
-  let api = (store.get('guideband_api') ?? (sameOrigin ? '' : 'http://localhost:8000')).replace(/\/$/, '');
+  let api = (store.get('guideband_api') ?? (sameOrigin ? '' : (window.GUIDEEYE_API_URL || 'http://localhost:8000'))).replace(/\/$/, '');
   const session = Math.random().toString(36).slice(2, 12);
   let online = false, activeTab = 'assistant';
   let mapsEmbedKey = '', mapDestination = null, mapOrigin = null, mapLastRendered = 0;
