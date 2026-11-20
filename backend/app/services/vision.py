@@ -308,7 +308,8 @@ async def ask_minimax(image: bytes, mime: str, question: str, detections: list[d
 
 
 async def ask_groq(image: bytes, mime: str, question: str, detections: list[dict]) -> str:
-    """The earlier OpenAI-compatible vision setup, kept as a fallback."""
+    """Groq vision with one short retry for transient provider failures."""
+    import asyncio
     import httpx
     encoded = base64.b64encode(image).decode('ascii')
     payload = {
@@ -323,13 +324,21 @@ async def ask_groq(image: bytes, mime: str, question: str, detections: list[dict
         'temperature': 0.2,
         'max_completion_tokens': 200,
     }
-    async with httpx.AsyncClient(timeout=httpx.Timeout(10.0, connect=4.0)) as client:
-        response = await client.post(
-            os.getenv('GROQ_API_URL', 'https://api.groq.com/openai/v1/chat/completions'),
-            headers={'Authorization': f"Bearer {os.environ['GROQ_API_KEY']}"},
-            json=payload,
-        )
-        response.raise_for_status()
+    response = None
+    for attempt in range(2):
+        try:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(10.0, connect=4.0)) as client:
+                response = await client.post(
+                    os.getenv('GROQ_API_URL', 'https://api.groq.com/openai/v1/chat/completions'),
+                    headers={'Authorization': f"Bearer {os.environ['GROQ_API_KEY']}"},
+                    json=payload,
+                )
+                response.raise_for_status()
+            break
+        except httpx.HTTPError:
+            if attempt:
+                raise
+            await asyncio.sleep(0.4)
     text = (response.json()['choices'][0]['message']['content'] or '').strip()
     if not text:
         raise ValueError('Groq returned no text')
