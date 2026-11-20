@@ -37,6 +37,15 @@ test('roles, socket address and voice commands', () => {
   assert.strictEqual(protocol.commandFrom('Connect please'), 'accept');
   assert.strictEqual(protocol.commandFrom('no thanks'), 'decline');
   assert.strictEqual(protocol.commandFrom('what was that'), null);
+  assert.strictEqual(protocol.commandFrom('Yes.'), 'accept');
+  assert.strictEqual(protocol.commandFrom('Guide, connect'), 'accept');
+  assert.strictEqual(protocol.commandFrom('not now'), 'decline');
+  // GuideEye's own prompt, heard by the microphone, is not an answer.
+  assert.strictEqual(protocol.commandFrom('A GuideEye user is nearby and can talk with you. Say connect, or double tap the screen. Say no to skip.'), null);
+  assert.strictEqual(protocol.commandFrom('say no to skip'), null);
+  // Nor is a word inside someone's sentence.
+  assert.strictEqual(protocol.commandFrom('there is no chair ahead'), null);
+  assert.strictEqual(protocol.commandFrom('ok so where are we going'), null);
 });
 
 test('both phones derive the same six-digit code and beacon', () => {

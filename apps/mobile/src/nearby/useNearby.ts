@@ -26,7 +26,12 @@ function cloudOffer(offer: RadarOffer | null): NearbyOffer | null {
   };
 }
 
-export function useNearby(enabled: boolean, role: NearbyRole | null, paused: boolean) {
+/**
+ * `busy` is true while a conversation is open. The phone then stays off the
+ * cloud radar (nobody is offered a second conversation mid-sentence) but keeps
+ * its direct link, which is carrying the conversation.
+ */
+export function useNearby(enabled: boolean, role: NearbyRole | null, paused: boolean, busy = false) {
   const [fromCloud, setFromCloud] = useState<NearbyOffer | null>(null);
   const [fromPeer, setFromPeer] = useState<NearbyOffer | null>(null);
   const [match, setMatch] = useState<NearbyMatch | null>(null);
@@ -35,8 +40,10 @@ export function useNearby(enabled: boolean, role: NearbyRole | null, paused: boo
   const position = useRef<{ lat: number; lon: number } | null>(null);
   const link = useRef<PeerLink | null>(null);
   const pausedRef = useRef(paused);
+  const busyRef = useRef(busy);
   const handled = useRef(new Set<string>());
   pausedRef.current = paused;
+  busyRef.current = busy;
 
   const offerMatch = useCallback((next: NearbyMatch) => {
     if (handled.current.has(next.code)) return;
@@ -125,7 +132,9 @@ export function useNearby(enabled: boolean, role: NearbyRole | null, paused: boo
     const tick = async () => {
       if (cancelled) return;
       let waitSeconds = 5;
-      if (appActive) {
+      if (appActive && busyRef.current) {
+        setFromCloud(null);
+      } else if (appActive) {
         const beacon = STATIC_BEACON || peerBeacon.current;
         if (position.current || beacon) {
           try {
@@ -149,7 +158,7 @@ export function useNearby(enabled: boolean, role: NearbyRole | null, paused: boo
     };
 
     const onEvent = (event: RadarEvent) => {
-      if (cancelled) return;
+      if (cancelled || busyRef.current) return;
       if (event.event === 'state') applyCloud(event);
       else if (event.event === 'offer' || event.event === 'offer_update') setFromCloud(cloudOffer(event));
       else if (event.event === 'declined' || event.event === 'expired') setFromCloud(null);
@@ -172,7 +181,13 @@ export function useNearby(enabled: boolean, role: NearbyRole | null, paused: boo
     };
   }, [enabled, role, paused, applyCloud, offerMatch]);
 
-  const offer = fromCloud ?? fromPeer;
+  // Step off the radar the moment a conversation opens, instead of waiting
+  // for presence to time out on the server.
+  useEffect(() => {
+    if (busy && enabled && radarConfigured()) void leaveRadar();
+  }, [busy, enabled]);
+
+  const offer = busy ? null : fromCloud ?? fromPeer;
 
   const accept = useCallback(() => {
     if (!offer) return;

@@ -111,6 +111,46 @@ class RadarTests(unittest.TestCase):
         self.assertFalse(self.radar.state('a')['active'])
         self.assertIsNone(self.radar.heartbeat('b', 'deaf', *SAME_ROOM)['offer'])
 
+    def test_a_declined_pair_is_offered_again_after_two_minutes_not_ten(self):
+        self.radar.heartbeat('a', 'blind', *HALL)
+        offer = self.radar.heartbeat('b', 'deaf', *SAME_ROOM)['offer']
+        self.radar.respond('a', offer['offer_id'], False)
+        self.clock.now += 100
+        self.radar.heartbeat('a', 'blind', *HALL)
+        self.assertIsNone(self.radar.heartbeat('b', 'deaf', *SAME_ROOM)['offer'])
+        self.clock.now += 30
+        self.radar.heartbeat('a', 'blind', *HALL)
+        self.assertIsNotNone(self.radar.heartbeat('b', 'deaf', *SAME_ROOM)['offer'])
+
+    def test_a_connected_pair_is_not_offered_again_a_minute_into_the_conversation(self):
+        self.radar.heartbeat('a', 'blind', *HALL)
+        offer = self.radar.heartbeat('b', 'deaf', *SAME_ROOM)['offer']
+        self.radar.respond('a', offer['offer_id'], True)
+        self.radar.respond('b', offer['offer_id'], True)
+        for _ in range(4):
+            self.clock.now += 25
+            self.radar.heartbeat('a', 'blind', *HALL)
+            self.assertIsNone(self.radar.heartbeat('b', 'deaf', *SAME_ROOM)['offer'])
+
+    def test_an_unanswered_offer_is_not_repeated_at_once(self):
+        self.radar.heartbeat('a', 'blind', *HALL)
+        first = self.radar.heartbeat('b', 'deaf', *SAME_ROOM)['offer']
+        self.clock.now += 15
+        self.radar.heartbeat('a', 'blind', *HALL)
+        self.radar.heartbeat('b', 'deaf', *SAME_ROOM)
+        self.clock.now += 16
+        self.radar.heartbeat('a', 'blind', *HALL)
+        self.assertIsNone(self.radar.heartbeat('b', 'deaf', *SAME_ROOM)['offer'])
+        self.assertIn(('a', 'expired'), self.events)
+        self.clock.now += 15
+        self.radar.heartbeat('a', 'blind', *HALL)
+        self.radar.heartbeat('b', 'deaf', *SAME_ROOM)
+        self.clock.now += 50
+        self.radar.heartbeat('a', 'blind', *HALL)
+        again = self.radar.heartbeat('b', 'deaf', *SAME_ROOM)['offer']
+        self.assertIsNotNone(again)
+        self.assertNotEqual(again['offer_id'], first['offer_id'])
+
     def test_leaving_withdraws_an_open_offer(self):
         self.radar.heartbeat('a', 'blind', *HALL)
         self.radar.heartbeat('b', 'deaf', *SAME_ROOM)

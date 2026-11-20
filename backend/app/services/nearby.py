@@ -14,7 +14,14 @@ RADAR_RADIUS_M = float(os.getenv('RADAR_RADIUS_M', '50'))
 PRESENCE_TTL_S = 20
 OFFER_TTL_S = 30
 MATCH_TTL_S = 60
-DECLINE_COOLDOWN_S = 600
+# After "Not now" the same two people are left alone for a while. Ten minutes
+# made one stray tap, or one misheard word, look like the feature had died.
+DECLINE_COOLDOWN_S = float(os.getenv('RADAR_DECLINE_COOLDOWN_S', '120'))
+# Two people who just connected are in a conversation: asking them again a
+# minute later put the prompt on top of the conversation they were having.
+MATCH_COOLDOWN_S = float(os.getenv('RADAR_MATCH_COOLDOWN_S', '300'))
+# An offer nobody answered is not repeated straight away.
+EXPIRED_COOLDOWN_S = float(os.getenv('RADAR_EXPIRED_COOLDOWN_S', '60'))
 HEARTBEAT_EVERY_S = 5
 ROOM_TTL_S = 2 * 60 * 60
 ROOM_MAX_DEVICES = 2
@@ -184,6 +191,7 @@ class Radar:
         for device in [d for d, p in self._present.items() if now - p['seen'] > PRESENCE_TTL_S]:
             del self._present[device]
         for offer in [o for o in self._offers.values() if o['expires'] <= now]:
+            self._cooldown[frozenset(offer['devices'])] = now + EXPIRED_COOLDOWN_S
             self._close(offer, 'expired')
         for device in [d for d, m in self._matches.items() if m['expires'] <= now]:
             del self._matches[device]
@@ -273,6 +281,7 @@ class Radar:
             self._emit(partner, {'event': 'offer_update', **self._offer_view(offer, partner)})
             return self.state(device)
         self._offers.pop(offer['id'], None)
+        self._cooldown[frozenset(offer['devices'])] = self._clock() + MATCH_COOLDOWN_S
         room = self._rooms.create(device, partner)
         for member in offer['devices']:
             role = self._present.get(member, {}).get('role', 'blind')

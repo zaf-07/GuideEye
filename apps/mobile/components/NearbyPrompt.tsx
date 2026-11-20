@@ -4,12 +4,13 @@ import { router, usePathname } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { Button, Text } from '../src/components';
-import { announce, stopSpeaking } from '../src/lib/announce';
+import { announce, speechBusy, stopSpeaking } from '../src/lib/announce';
 import { commandFrom, promptCopy, roleForImpairments } from '../src/nearby/protocol';
 import { useNearby } from '../src/nearby/useNearby';
 import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from '../src/speechRecognition';
 import { useProfile } from '../src/state/ProfileContext';
 import { hasVisionTrack } from '../src/state/profile';
+import { useVoice } from '../src/voice/VoiceControl';
 import { colors, radius, spacing } from '../src/theme/tokens';
 
 const DOUBLE_TAP_MS = 450;
@@ -24,7 +25,13 @@ export function NearbyPrompt() {
   // message transport after a direct match. Pausing here used to disconnect
   // the two phones immediately after both people accepted.
   const paused = pathname.startsWith('/onboarding');
-  const { offer, match, accept, decline, clearMatch } = useNearby(enabled, role, paused);
+  // A conversation is already open: do not offer another one on top of it.
+  const inConversation = pathname.startsWith('/bridge');
+  const { offer, match, accept, decline, clearMatch } = useNearby(enabled, role, paused, inConversation);
+  const { handsFree } = useVoice();
+  const handsFreeRef = useRef(handsFree);
+  handsFreeRef.current = handsFree;
+  const offeredAt = useRef(0);
   const audioFirst = hasVisionTrack(profile);
   const profileRef = useRef(profile);
   profileRef.current = profile;
@@ -38,6 +45,10 @@ export function NearbyPrompt() {
 
   useSpeechRecognitionEvent('result', (event) => {
     if (!offerRef.current || offerRef.current.youAccepted || !event.isFinal) return;
+    // The always-on microphone also hears GuideEye reading the prompt aloud
+    // ("…say no to skip"). Nothing heard while it is speaking, or in the first
+    // moment after the prompt appears, is the user's answer.
+    if (speechBusy() || Date.now() - offeredAt.current < 1500) return;
     const command = commandFrom(event.results[0]?.transcript ?? '');
     if (command === 'accept') actions.current.accept();
     else if (command === 'decline') actions.current.decline();
@@ -45,10 +56,13 @@ export function NearbyPrompt() {
 
   useEffect(() => {
     if (!offerId) return undefined;
+    offeredAt.current = Date.now();
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
     const copy = promptCopy(offerRef.current!, audioFirst);
     announce(profileRef.current, copy.spoken, { urgent: true });
-    if (!audioFirst) return undefined;
+    // With hands-free voice on, its microphone is already listening and the
+    // answer arrives through it. Starting a second recognizer fought with it.
+    if (!audioFirst || handsFreeRef.current) return undefined;
     const timer = setTimeout(async () => {
       try {
         if (!offerRef.current || !ExpoSpeechRecognitionModule.isRecognitionAvailable()) return;
@@ -104,7 +118,7 @@ export function NearbyPrompt() {
             onPress={accept}
             hint="Opens a conversation with the nearby GuideEye user once they also connect."
           />
-          <Button label="Not now" tone="ghost" onPress={decline} hint="Dismisses this and does not ask about this person again for ten minutes." />
+          <Button label="Not now" tone="ghost" onPress={decline} hint="Dismisses this and does not ask about this person again for two minutes." />
         </View>
       </Pressable>
     </Modal>

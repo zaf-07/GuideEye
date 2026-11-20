@@ -24,7 +24,8 @@ export type PeerWire =
   | { t: 'msg'; m: PeerBridgeMessage };
 
 const PARTNER: Record<NearbyRole, NearbyRole> = { blind: 'deaf', deaf: 'blind' };
-const PEER_COOLDOWN_MS = 10 * 60 * 1000;
+// Matches the server: after "Not now" the same person is not offered again for two minutes.
+const PEER_COOLDOWN_MS = 2 * 60 * 1000;
 
 export function roleForImpairments(impairments: readonly string[]): NearbyRole | null {
   if (impairments.includes('vision')) return 'blind';
@@ -81,10 +82,25 @@ export function promptCopy(offer: NearbyOffer, audioFirst: boolean) {
   };
 }
 
+const ACCEPT_WORDS = /^(?:yes|yeah|yep|okay|ok|sure|connect|accept)(?: (?:please|connect|yes|sure|now))?$/;
+const DECLINE_WORDS = /^(?:no|nope|not now|cancel|decline|skip|stop)(?: (?:thanks|thank you|please|now))?$/;
+
+/**
+ * A spoken answer to the nearby prompt. Only a short answer counts: the whole
+ * utterance has to be the answer. Matching the words anywhere in a sentence
+ * meant that GuideEye's own prompt ("…say no to skip"), picked up by the
+ * microphone, declined the offer, and any passing "no" or "ok" answered it.
+ */
 export function commandFrom(transcript: string): 'accept' | 'decline' | null {
-  const said = transcript.toLowerCase();
-  if (/\b(no|not now|cancel|decline|skip|stop)\b/.test(said)) return 'decline';
-  if (/\b(connect|yes|yeah|okay|ok|accept|sure)\b/.test(said)) return 'accept';
+  const said = transcript
+    .toLowerCase()
+    .replace(/[^a-z' ]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/^(?:hey |ok |okay )?guide(?: ?eye)? /, '')
+    .trim();
+  if (!said || said.split(' ').length > 3) return null;
+  if (DECLINE_WORDS.test(said)) return 'decline';
+  if (ACCEPT_WORDS.test(said)) return 'accept';
   return null;
 }
 
