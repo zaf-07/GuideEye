@@ -23,6 +23,11 @@ export type BlockedView = {
   covered: boolean;
   /** Most of the frame is dark: the camera cannot see, whatever is in front. */
   dark: boolean;
+  /**
+   * The bottom of the frame is blank while the top is not: the lens is partly
+   * behind something, which is what the edge of a chest pocket looks like.
+   */
+  lowerCovered?: boolean;
 };
 
 type Region = { x: number; y: number; width: number; height: number };
@@ -112,6 +117,14 @@ export function analyzeBlockedView(
 
   const totalCells = ROWS * COLUMNS;
   const covered = blankCells >= totalCells * COVERED_SHARE;
+  const blankIn = (firstRow: number, lastRow: number) => {
+    let count = 0;
+    for (let row = firstRow; row <= lastRow; row += 1) {
+      for (let column = 0; column < COLUMNS; column += 1) if (featureless[row][column]) count += 1;
+    }
+    return count / ((lastRow - firstRow + 1) * COLUMNS);
+  };
+  const lowerCovered = !covered && blankIn(ROWS - 3, ROWS - 1) >= 0.9 && blankIn(0, 3) <= 0.5;
   const dark = darkCells >= totalCells * COVERED_SHARE;
   const bandRows = BAND_LAST_ROW - BAND_FIRST_ROW + 1;
   let columns = Array.from({ length: COLUMNS }, (_, column) => {
@@ -137,5 +150,6 @@ export function analyzeBlockedView(
     centers: Array.from({ length: COLUMNS }, (_, column) => (column + 0.5) / COLUMNS),
     covered,
     dark,
+    lowerCovered,
   };
 }

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
+  Platform,
   Pressable,
   StyleSheet,
   View,
@@ -10,7 +11,8 @@ import * as Haptics from 'expo-haptics';
 import * as Speech from 'expo-speech';
 import { Display, GlassCard, GreetingBar, Screen, Text } from '../../components';
 import { useProfile } from '../../state/ProfileContext';
-import { hasLocalDetector } from '../../detector.native';
+import { hasLocalDetector } from '../../detector';
+import { hasVisionTrack } from '../../state/profile';
 import { colors, radius, shadow, spacing } from '../../theme/tokens';
 
 const CONTENT = {
@@ -128,8 +130,12 @@ const OVERVIEW: {
   { tab: '/main/connect', icon: 'swap-horizontal', tint: '#C9A7FF', title: 'Conversation Bridge', desc: 'Deaf signs in, blind hears it — and back again' },
 ];
 
+// The welcome is said once per launch. Every tab renders this screen, so
+// without the flag it was repeated on each tab the user opened.
+let welcomed = false;
+
 export function HomeScreen({ section = 'home' }: { section?: HomeSection } = {}) {
-  const { profile } = useProfile();
+  const { profile, ready } = useProfile();
   const [detectorReady, setDetectorReady] = useState(false);
   const [lang, setLang] = useState<'en' | 'ru'>('en');
 
@@ -137,12 +143,16 @@ export function HomeScreen({ section = 'home' }: { section?: HomeSection } = {})
 
   useEffect(() => {
     setDetectorReady(hasLocalDetector());
-    // Friendly accessible announcement on main screen entrance (in English by default)
+    if (welcomed || !ready) return;
+    welcomed = true;
+    // With hands-free voice on, the voice assistant greets the user itself
+    // ("GuideEye is listening…"); a second welcome only delays the microphone.
+    if (Platform.OS !== 'web' && hasVisionTrack(profile) && profile.voiceControl !== false) return;
     Speech.speak(t.welcomeVoice, {
       language: lang === 'en' ? 'en-US' : 'ru-RU',
       rate: 0.95,
     });
-  }, [lang]);
+  }, [lang, ready]);
 
   const toggleLanguage = () => {
     const nextLang = lang === 'en' ? 'ru' : 'en';

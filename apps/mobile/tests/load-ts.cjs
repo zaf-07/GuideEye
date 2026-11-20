@@ -13,7 +13,19 @@ module.exports = function loadTs(relativePath, stubs = {}) {
   loaded.filename = file;
   loaded.paths = Module._nodeModulePaths(path.dirname(file));
   const realRequire = loaded.require.bind(loaded);
-  loaded.require = (id) => (id in stubs ? stubs[id] : realRequire(id));
+  loaded.require = (id) => {
+    if (id in stubs) return stubs[id];
+    // A sibling TypeScript module that the test did not stub is loaded for real.
+    if (id.startsWith('.')) {
+      const target = path.resolve(path.dirname(file), id);
+      for (const extension of ['.ts', '.tsx']) {
+        if (fs.existsSync(target + extension)) {
+          return loadTs(path.relative(path.join(__dirname, '..'), target + extension), stubs);
+        }
+      }
+    }
+    return realRequire(id);
+  };
   loaded._compile(output, file);
   return loaded.exports;
 };

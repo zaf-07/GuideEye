@@ -14,10 +14,16 @@ import { getSightHeaders } from './sightIdentity';
  *   1. what the user typed in Settings  (survives restarts)
  *   2. EXPO_PUBLIC_API_URL              (build-time default)
  *   3. the dev machine serving this bundle, on the API port
+ *   4. the team's hosted server          (so a fresh install is never disconnected)
+ *
+ * A local address that does not answer is replaced by the next reachable
+ * choice for the session, instead of leaving every feature offline.
  */
 
 const STORAGE_KEY = 'guideeye.apiUrl';
 const API_PORT = '8000';
+/** The hosted GuideEye server: the last resort when nothing else is set or reachable. */
+export const PUBLIC_API_URL = 'https://guideeye.onrender.com';
 
 /** Addresses that are reachable only from inside the local network. */
 function isPrivateHost(hostname: string): boolean {
@@ -112,12 +118,41 @@ export async function loadApiUrl(): Promise<string> {
       } catch {
         stored = '';
       }
-      cached = stored || envApiUrl || devHostApiUrl();
+      cached = stored || envApiUrl || devHostApiUrl() || PUBLIC_API_URL;
       announce(cached);
+      void settle(cached);
       return cached;
     })();
   }
   return loading;
+}
+
+function isLocalAddress(value: string) {
+  try {
+    return isPrivateHost(new URL(value).hostname);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Check the chosen address once at startup.
+ *
+ * A laptop address saved last week, or the dev machine when the backend is not
+ * running on it, used to strand the whole app: every request failed with "the
+ * server could not be reached". If a local address does not answer, use the
+ * hosted server for this session (the saved choice is kept for next time).
+ * The request also wakes the hosted server, which sleeps when idle and takes
+ * up to a minute to start, before the user's first question needs it.
+ */
+async function settle(initial: string) {
+  if (!initial) return;
+  const probe = await probeApi(initial, isLocalAddress(initial) ? 3500 : 60000);
+  if (probe.ok || cached !== initial || !isLocalAddress(initial)) return;
+  const fallback = envApiUrl && envApiUrl !== initial && !isLocalAddress(envApiUrl) ? envApiUrl : PUBLIC_API_URL;
+  cached = fallback;
+  announce(cached);
+  void probeApi(fallback, 60000);
 }
 
 /**
@@ -126,12 +161,12 @@ export async function loadApiUrl(): Promise<string> {
  * the build-time and dev-host guesses rather than claiming there is no server.
  */
 export function apiUrl(): string {
-  return cached ?? envApiUrl ?? devHostApiUrl();
+  return cached ?? (envApiUrl || devHostApiUrl() || PUBLIC_API_URL);
 }
 
 export async function setApiUrl(value: string): Promise<string> {
   const normalized = normalizeApiUrl(value);
-  cached = normalized || envApiUrl || devHostApiUrl();
+  cached = normalized || envApiUrl || devHostApiUrl() || PUBLIC_API_URL;
   try {
     if (normalized) await AsyncStorage.setItem(STORAGE_KEY, normalized);
     else await AsyncStorage.removeItem(STORAGE_KEY);
@@ -170,7 +205,7 @@ export async function probeApi(value: string, timeoutMs = 4000): Promise<ProbeRe
     if (!response.ok) return { ok: false, url, detail: `Server answered ${response.status}.`, latencyMs };
     return { ok: true, url, detail: 'Connected.', latencyMs };
   } catch (error) {
-    const message = (error as Error).name === 'AbortError' ? 'No answer within 4 seconds.' : (error as Error).message;
+    const message = (error as Error).name === 'AbortError' ? `No answer within ${Math.round(timeoutMs / 1000)} seconds.` : (error as Error).message;
     return { ok: false, url, detail: message };
   } finally {
     clearTimeout(timer);

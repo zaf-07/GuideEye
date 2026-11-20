@@ -5,12 +5,13 @@ import * as Speech from 'expo-speech';
 import { Camera } from 'expo-camera';
 import { router, usePathname } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { announce, speechBusy, stopSpeaking } from '../lib/announce';
+import { announce, narrating, speechBusy, stopNarration, stopSpeaking } from '../lib/announce';
 import { ExpoSpeechRecognitionModule, speechRecognitionAvailable, useSpeechRecognitionEvent } from '../speechRecognition';
 import { hasVisionTrack } from '../state/profile';
 import { useProfile } from '../state/ProfileContext';
 import { useAssistant } from '../useAssistant';
 import { HELP_TEXT, extractCommand, localCommand, parseDelay, spokenDelay } from './commands';
+import { holdAttention } from './frame';
 
 type Assistant = ReturnType<typeof useAssistant>;
 
@@ -25,6 +26,9 @@ interface VoiceCtx {
 const VoiceContext = createContext<VoiceCtx | undefined>(undefined);
 
 const OWN_MICROPHONE = /^\/(bridge|translate)\b/;
+// Screens the wake word must not pull the user away from: the camera keeps
+// describing the scene, and the answer is spoken wherever they are.
+const STAY_PUT = /^\/(assistant|camera)\b/;
 const RESTART_MS = 350;
 const RETRY_MS = 1500;
 const SLOW_RETRY_MS = 10000;
@@ -63,6 +67,8 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
   profileRef.current = profile;
   const assistantRef = useRef(assistant);
   assistantRef.current = assistant;
+  const pathnameRef = useRef(pathname);
+  pathnameRef.current = pathname;
 
   const beginRef = useRef<() => void>(() => {});
 
@@ -89,6 +95,9 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     if (!want.current) return;
     try {
       if (!ExpoSpeechRecognitionModule.isRecognitionAvailable()) return;
+      // Starting the recognizer reconfigures the audio session, which would
+      // clip whatever is being spoken. Wait for a pause; a recognizer that is
+      // already running keeps listening through scene narration.
       if (speechBusy() || (await Speech.isSpeakingAsync().catch(() => false))) {
         queue(RESTART_MS);
         return;
@@ -180,6 +189,10 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
           scheduled.current = [];
           return say(count ? 'Cancelled what was scheduled.' : 'Nothing is scheduled.');
         }
+        const target = local.href.split('?')[0];
+        if (target !== '/main' && pathnameRef.current.startsWith(target)) {
+          return say(target === '/camera' ? 'The camera is already on.' : 'You are already there.');
+        }
         say(local.say);
         router.push(local.href as never);
         return undefined;
@@ -203,9 +216,12 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     // Ignore duplicate interim/final events for the same wake word.
     if (Date.now() < followUpUntil.current) return;
     followUpUntil.current = Date.now() + FOLLOW_UP_MS;
+    // Scene narration stays quiet while the user is about to speak.
+    holdAttention(FOLLOW_UP_MS);
+    stopNarration();
     setHeard('Guide');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-    if (!pathname.startsWith('/assistant')) router.push('/assistant' as never);
+    if (!STAY_PUT.test(pathname)) router.push('/assistant' as never);
     say('Yes?');
   }, [pathname, say]);
 
@@ -240,8 +256,16 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     if (!want.current) return;
     const transcript = event.results[0]?.transcript ?? '';
     if (!transcript.trim()) return;
+    const addressed =
+      extractCommand(transcript, {
+        awaitingConfirm: Boolean(assistantRef.current.reply?.confirm),
+        followUp: Date.now() < followUpUntil.current,
+        wakeRequired: true,
+      }) !== null;
     if (!event.isFinal) {
-      setHeard(transcript.trim());
+      // Only show what GuideEye will act on. Echoing every overheard sentence
+      // made it look as if a command had been taken when it had been ignored.
+      if (addressed) setHeard(transcript.trim());
       if (wakeDebounce.current) clearTimeout(wakeDebounce.current);
       wakeDebounce.current = null;
       if (BARE_WAKE.test(transcript)) {
@@ -259,9 +283,16 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     wakeDebounce.current = null;
     const quiet = /\bguides?\b.*\b(stop talking|quiet|silence|shut up|hush)\b/i.test(transcript);
     void (async () => {
+      if (!addressed) {
+        // Speech without the wake word is not for GuideEye.
+        setHeard('');
+        return;
+      }
       if (!quiet) {
         if (speechBusy()) return;
-        if (await Speech.isSpeakingAsync().catch(() => false)) return;
+        // Scene narration may be interrupted by a command; an answer may not.
+        if (narrating()) stopNarration();
+        else if (await Speech.isSpeakingAsync().catch(() => false)) return;
       }
       if (assistantRef.current.busy) return;
       const result = extractCommand(transcript, {
@@ -276,6 +307,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
         return;
       }
       followUpUntil.current = 0;
+      holdAttention(0);
       setHeard(result.text);
       run(result.text);
     })();

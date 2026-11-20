@@ -1,5 +1,6 @@
 import { Platform } from 'react-native';
 import { getSightDeviceId } from './sightIdentity';
+import { loadApiUrl } from './api';
 import { getApiUrl } from './vision';
 
 export type Contact = { name: string; phone: string };
@@ -46,7 +47,9 @@ export function assistantConfigured() {
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const apiUrl = getApiUrl();
+  // Wait for the saved server address on a cold start, so the very first
+  // request does not go to the default server instead of the chosen one.
+  const apiUrl = (await loadApiUrl().catch(() => '')) || getApiUrl();
   if (!apiUrl) throw new Error('Set the GuideEye server address in Settings first.');
   let response: Response;
   try {

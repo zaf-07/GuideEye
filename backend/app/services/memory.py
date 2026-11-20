@@ -463,6 +463,11 @@ class Memory:
         # "Where are my keys?" must not be answered with "you asked where your keys
         # are" — the log of past requests only counts when the question is about them.
         about_requests = bool(re.search(r'\b(ask|asked|say|said|request)', question.lower()))
+        if about_requests:
+            # "What did I ask you?" has no keyword to match: list the latest requests.
+            asked = [re.sub(r'^I asked: "(.*)"$', r'\1', note['text']) for note in self.notes() if note['kind'] == 'asked'][:3]
+            if asked:
+                return 'You asked: ' + '. Before that: '.join(asked) + '.'
         for note in self.notes():
             if note['kind'] == 'asked' and not about_requests:
                 continue
@@ -537,6 +542,10 @@ class Memory:
                 provider = 'gemini'
             except Exception:
                 pass
+        if not text.strip():
+            # Nothing was seen and the model did not answer. An empty memory is
+            # better than a note that says "I do not recognise anything".
+            return {'id': None, 'kind': 'snapshot', 'text': '', 'created': time.time(), 'provider': provider}
         note = self.add_note('snapshot', text, place=place)
         note['provider'] = provider
         return note

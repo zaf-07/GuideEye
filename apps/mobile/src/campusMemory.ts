@@ -203,11 +203,16 @@ function setStoredJson<T>(key: string, value: T): void {
  * Gracefully merges server state with local storage.
  * If server is unreachable or offline, returns local alerts with ZERO errors.
  */
+// A server without the shared-reports service answers 404. The camera asks
+// every few seconds, so remember that answer instead of repeating the request.
+const ALERTS_RETRY_MS = 10 * 60 * 1000;
+let alertsMissingUntil = 0;
+
 export async function getCampusAlerts(location?: string): Promise<CampusAlert[]> {
   const localAlerts = getStoredJson<CampusAlert[]>(LOCAL_STORAGE_KEY_ALERTS, SEED_ALERTS);
   const apiUrl = getApiUrl();
 
-  if (!apiUrl) {
+  if (!apiUrl || Date.now() < alertsMissingUntil) {
     return filterAlerts(localAlerts, location);
   }
 
@@ -221,6 +226,7 @@ export async function getCampusAlerts(location?: string): Promise<CampusAlert[]>
     });
     clearTimeout(timeout);
 
+    if (res.status === 404) alertsMissingUntil = Date.now() + ALERTS_RETRY_MS;
     if (res.ok) {
       const serverAlerts = (await res.json()) as CampusAlert[];
       // The server is the shared memory: an empty answer means nothing is

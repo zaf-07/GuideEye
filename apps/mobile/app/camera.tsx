@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import * as Haptics from 'expo-haptics';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as Speech from 'expo-speech';
 import { useEffect, useRef, useState } from 'react';
@@ -19,11 +20,48 @@ import { UtteranceController, initialUtterance, type UtteranceState } from '../s
 import { useSceneMemory, rememberHazard } from '../src/memory/capture';
 import { useProfile } from '../src/state/ProfileContext';
 import { hasLocalDetector } from '../src/detector';
-import { AssistMode, getApiUrl, hasVisionBackend, interpretSignSequence, useVisionLoop } from '../src/vision';
+import { AssistMode, getApiUrl, hasVisionBackend, interpretSignSequence, trackFrameFile, useVisionLoop } from '../src/vision';
 import { observeForMemory } from '../src/assistant';
+import { narrate, speakAloud, speechBusy } from '../src/lib/announce';
+import { Narrator } from '../src/narration';
 import { currentCoordinates } from '../src/useAssistant';
-import { captureFrame, setFrameSource } from '../src/voice/frame';
+import { attentionHeld, isAssistantBusy, recentFrame, setFrameSource } from '../src/voice/frame';
 import type { VisionObject } from '../src/vision';
+
+// Keeps the screen from locking while the camera is the user's eyes. A locked
+// phone suspends the app, which in a pocket looks exactly like "it stopped
+// working". Optional: the module ships with Expo but a stripped build may lack it.
+type KeepAwakeModule = typeof import('expo-keep-awake');
+let keepAwake: KeepAwakeModule | null = null;
+try {
+  keepAwake = require('expo-keep-awake') as KeepAwakeModule;
+} catch {
+  keepAwake = null;
+}
+const KEEP_AWAKE_TAG = 'guideeye-camera';
+
+// A full-resolution photo is twelve megapixels: slow to take, slow to upload
+// and far more than detection or reading needs. 1080p is taken several times
+// faster and still leaves a letter legible.
+const IOS_PICTURE_SIZE = '1920x1080';
+const TARGET_LONG_SIDE = 1920;
+
+/** The smallest size the camera offers that is still at least 1080p. */
+function pickPictureSize(sizes: string[]): string | undefined {
+  const parsed = sizes
+    .map((size) => {
+      const match = /^(\d+)x(\d+)$/.exec(size);
+      return match ? { size, long: Math.max(Number(match[1]), Number(match[2])), area: Number(match[1]) * Number(match[2]) } : null;
+    })
+    .filter((item): item is { size: string; long: number; area: number } => item !== null);
+  const enough = parsed.filter((item) => item.long >= TARGET_LONG_SIDE).sort((a, b) => a.area - b.area);
+  return enough[0]?.size;
+}
+
+// How long a cloud description stays worth showing and repeating.
+const DESCRIPTION_FRESH_MS = 30000;
+// A frame becomes a text memory this often.
+const MEMORY_OBSERVE_MS = 45000;
 
 const emptySignContext: SignContextState = { frameCount: 0, maxFrames: 180, handCount: 0, ready: false };
 
@@ -67,6 +105,7 @@ export default function CameraScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const [cameraPermissionError, setCameraPermissionError] = useState('');
   const [cameraReady, setCameraReady] = useState(false);
+  const [pictureSize, setPictureSize] = useState<string | undefined>(Platform.OS === 'ios' ? IOS_PICTURE_SIZE : undefined);
   const [mode, setMode] = useState<AssistMode>(params.initialMode === 'sign' || params.mode === 'sign' ? 'sign' : 'scene');
   const [isPocketMode, setIsPocketMode] = useState(params.pocket === 'true');
   const [speaking, setSpeaking] = useState(true);
@@ -83,12 +122,14 @@ export default function CameraScreen() {
   const [isCheckingDelta, setIsCheckingDelta] = useState(false);
   const [sharingSight, setSharingSight] = useState(false);
   const [sightNotice, setSightNotice] = useState('');
+  // The server this phone uses may not run the shared-reports service at all.
+  const [sharingUnsupported, setSharingUnsupported] = useState(false);
   const announcedAlerts = useRef<Set<number>>(new Set());
   const lastCoach = useRef({ text: '', at: 0 });
   const translationInFlight = useRef(false);
   const lastTranslation = useRef('');
-  const lastApproachWarning = useRef('');
-  const lastObstacleWarning = useRef('');
+  const narrator = useRef(new Narrator());
+  const lastRepeatAt = useRef(0);
   // Decides when the confirmed signs form a finished sentence (src/signUtterance.ts).
   const utteranceController = useRef(new UtteranceController());
   const [utterance, setUtterance] = useState<UtteranceState>(initialUtterance);
@@ -144,11 +185,19 @@ export default function CameraScreen() {
   // visibly flicker even though detection was unavailable.
   const hasFrameAnalyzer = isSignMode ? hasVisionBackend() : hasLocalDetector() || hasVisionBackend();
   const visionEnabled = Boolean(permission?.granted) && cameraReady && !usesBrowserHandTracking && hasFrameAnalyzer;
-  const { result: vision, state: visionState, detections, cameraCoach, obstacles, blocked, performance, scanNow } = useVisionLoop(
+  const { result: vision, description, state: visionState, detections, cameraCoach, obstacles, blocked, performance, scanNow } = useVisionLoop(
     cameraRef,
     mode,
     visionEnabled,
   );
+  // The cloud model's sentence about the whole scene, kept while it is still current.
+  const [sceneSentence, setSceneSentence] = useState('');
+  useEffect(() => {
+    setSceneSentence(description?.text ?? '');
+    if (!description) return undefined;
+    const expire = setTimeout(() => setSceneSentence(''), DESCRIPTION_FRESH_MS);
+    return () => clearTimeout(expire);
+  }, [description]);
   // With neither an on-device runtime nor a backend there is nothing to
   // detect with, and a blind user would otherwise be left pointing the camera
   // at a screen that never says why nothing is happening.
@@ -201,8 +250,11 @@ export default function CameraScreen() {
     }));
   const current: AssistFrame = vision || detections.length ? {
     title: vision?.summary || localSummary,
-    detail: vision?.speech || 'Real-time spatial tracker running privately on this device.',
-    speech: vision?.speech || localSummary,
+    detail: sceneSentence || vision?.speech || 'Real-time spatial tracker running privately on this device.',
+    // Asked to repeat, say what is known: the named objects first, then the fuller sentence.
+    speech: [vision?.kind === 'empty' ? '' : vision?.speech || localSummary, sceneSentence && sceneSentence !== vision?.speech ? sceneSentence : '']
+      .filter(Boolean)
+      .join(' ') || vision?.speech || localSummary,
     icon: mode === 'sign' ? 'hand-left' : vision?.urgency === 'high' ? 'warning' : 'navigate',
     // Prefer server YOLO boxes when supplied: they are the detections paired
     // with metric depth. Keep local YOLOX as a fast offline fallback.
@@ -294,11 +346,13 @@ export default function CameraScreen() {
       ? `${vision.speech} · Not spoken yet. Tap Speak if this is what you signed.`
       : vision?.speech || 'Keep both hands clearly in the camera frame.';
 
+  const { profile } = useProfile();
+
+  // Something the user asked to hear (a button, a tap): said at once.
   const speak = (text = current.speech) => {
     if (!speaking || !text.trim()) return;
-    Speech.stop();
     const isRu = /[\u0400-\u04FF]/.test(text);
-    Speech.speak(text, { language: isRu ? 'ru-RU' : 'en-US', rate: 0.95 });
+    speakAloud(text, { language: isRu ? 'ru-RU' : 'en-US', rate: profile.speechRate || 1 });
   };
 
   const switchMode = (nextMode: AssistMode) => {
@@ -369,29 +423,51 @@ export default function CameraScreen() {
     void Speech.stop();
   }, []);
 
-  const { profile } = useProfile();
+  // The screen stays on for as long as the camera is open.
+  useEffect(() => {
+    keepAwake?.activateKeepAwakeAsync(KEEP_AWAKE_TAG).catch(() => {});
+    return () => {
+      keepAwake?.deactivateKeepAwake(KEEP_AWAKE_TAG).catch(() => {});
+    };
+  }, []);
+
+  // Android cameras name their own sizes: pick the smallest that is still 1080p.
+  useEffect(() => {
+    if (Platform.OS !== 'android' || !cameraReady || pictureSize) return;
+    cameraRef.current
+      ?.getAvailablePictureSizesAsync()
+      .then((sizes) => {
+        const chosen = pickPictureSize(sizes);
+        if (chosen) setPictureSize(chosen);
+      })
+      .catch(() => {});
+  }, [cameraReady, pictureSize]);
 
   // The assistant borrows this camera for "read this", "remember this", "pay this" and "what is in front of me".
   useEffect(() => {
     if (mode !== 'scene' || !cameraReady) return undefined;
     setFrameSource(async () => {
-      const picture = await cameraRef.current?.takePictureAsync({ quality: 0.7, shutterSound: false });
+      const picture = await cameraRef.current?.takePictureAsync({ quality: 0.6, skipProcessing: true, shutterSound: false });
+      trackFrameFile(picture?.uri);
       return picture?.uri ?? null;
     });
     return () => setFrameSource(null);
   }, [mode, cameraReady]);
 
-  // Every 20 seconds a frame becomes a text note on the server, so "where are my keys" has something to recall.
+  // Now and then a frame becomes a text note on the server, so "where are my
+  // keys" has something to recall. It borrows a frame the scan loop already
+  // took, and steps aside while the assistant is using the cloud model.
   const remembersScene = mode === 'scene' && cameraReady && !profile.localOnlyMemory;
   useEffect(() => {
     if (!remembersScene) return undefined;
     const timer = setInterval(() => {
-      if (!getApiUrl()) return;
+      if (!getApiUrl() || isAssistantBusy()) return;
+      const frame = recentFrame(3000);
+      if (!frame) return;
       void (async () => {
-        const frame = await captureFrame();
-        if (frame) await observeForMemory(frame, await currentCoordinates()).catch(() => {});
+        await observeForMemory(frame, await currentCoordinates()).catch(() => {});
       })();
-    }, 20000);
+    }, MEMORY_OBSERVE_MS);
     return () => clearInterval(timer);
   }, [remembersScene]);
 
@@ -407,22 +483,51 @@ export default function CameraScreen() {
     enabled: !isSignMode,
   });
 
+  // Scene narration. Every new result is offered to the narrator, which
+  // decides whether it is news (see src/narration.ts). It never talks over the
+  // assistant, and waits while the user is in the middle of a command.
+  const narrationBusy = () => speechBusy() || isAssistantBusy() || attentionHeld();
   useEffect(() => {
-    if (isSignMode || !vision?.approaching?.length) return;
-    const warning = vision.approaching.map((item) => `${item.label}:${item.distance_m}`).join('|');
-    if (warning !== lastApproachWarning.current) {
-      lastApproachWarning.current = warning;
-      speak(vision.speech);
-    }
-  }, [isSignMode, vision?.approaching, vision?.speech]);
-
+    narrator.current.reset();
+  }, [mode]);
   useEffect(() => {
-    if (isSignMode || !vision?.should_speak || !vision.speech) return;
-    if (vision.scene_key !== lastObstacleWarning.current) {
-      lastObstacleWarning.current = vision.scene_key;
-      speak(vision.speech);
+    if (isSignMode || !speaking || !vision) return;
+    const text = narrator.current.offer(
+      { key: vision.scene_key, text: vision.speech, kind: vision.kind ?? 'objects', urgent: vision.urgency === 'high' },
+      Date.now(),
+      narrationBusy(),
+    );
+    if (!text || !narrate(text, { rate: profile.speechRate || 1 })) return;
+    if (profile.haptics && Platform.OS !== 'web' && (vision.urgency === 'high' || vision.scene_key.includes('!') || vision.kind === 'blocked')) {
+      Haptics.impactAsync(vision.urgency === 'high' ? Haptics.ImpactFeedbackStyle.Heavy : Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     }
-  }, [isSignMode, vision?.should_speak, vision?.speech, vision?.scene_key]);
+  }, [isSignMode, speaking, vision]);
+  // In a chest pocket the pocket's edge often hides the bottom of the lens.
+  // Say so once it has stayed that way for a few seconds, and remind rarely.
+  const lowerCoveredSince = useRef(0);
+  const lowerCoveredSpokenAt = useRef(0);
+  useEffect(() => {
+    if (isSignMode || !speaking) return;
+    if (!blocked?.lowerCovered) {
+      lowerCoveredSince.current = 0;
+      return;
+    }
+    const now = Date.now();
+    if (!lowerCoveredSince.current) lowerCoveredSince.current = now;
+    if (now - lowerCoveredSince.current < 3000 || now - lowerCoveredSpokenAt.current < 60000 || narrationBusy()) return;
+    if (narrate('Part of the camera is covered. Lift the phone a little higher in the pocket.', { rate: profile.speechRate || 1 })) {
+      lowerCoveredSpokenAt.current = now;
+    }
+  }, [isSignMode, speaking, blocked]);
+  useEffect(() => {
+    if (isSignMode || !speaking || !description) return;
+    const text = narrator.current.offer(
+      { key: description.key, text: description.text, kind: 'description' },
+      Date.now(),
+      narrationBusy(),
+    );
+    if (text) narrate(text, { rate: profile.speechRate || 1 });
+  }, [isSignMode, speaking, description]);
 
   // Feed the utterance controller: on every tracker update, and on a timer so
   // a sentence still ends when nothing on screen changes.
@@ -471,7 +576,7 @@ export default function CameraScreen() {
           const spoken = firstCheck
             ? `${fresh.length === 1 ? 'One report' : `${fresh.length} reports`} in ${campusLocation}: ${fresh.slice(0, 2).map((alert) => `${describe(alert)}, ${alert.relative_time}`).join('. ')}.`
             : `New report in ${campusLocation}: ${describe(fresh[0])}.`;
-          Speech.speak(spoken, { rate: 0.95 });
+          narrate(spoken, { rate: 0.95 });
         }
         firstCheck = false;
       }
@@ -502,16 +607,15 @@ export default function CameraScreen() {
     const sinceLast = now - lastCoach.current.at;
     if (sinceLast < 8000 || (advice === lastCoach.current.text && sinceLast < 20000)) return;
     lastCoach.current = { text: advice, at: now };
-    Speech.speak(advice, { rate: 1.0 });
+    narrate(advice);
   }, [cameraCoach, mode]);
 
   const handleWhatChanged = async () => {
-    Speech.stop();
     setIsCheckingDelta(true);
     try {
       const res = await checkWhatChanged(campusLocation, detections);
       setDeltaNotice(res.delta_summary);
-      Speech.speak(res.speech, { rate: 0.95 });
+      speak(res.speech);
     } catch {
       setDeltaNotice('Baseline checked. No changes detected.');
     } finally {
@@ -575,6 +679,11 @@ export default function CameraScreen() {
       } else {
         const failure = failures[0];
         const message = failure?.message || 'Unknown server error';
+        if (/\(404\)|not found/i.test(message)) {
+          setSharingUnsupported(true);
+          setSightNotice('Sharing detections is not available on this GuideEye server.');
+          return;
+        }
         const helpfulMessage = /401|403|unauthori[sz]ed|access denied/i.test(message)
           ? 'Shared Sight access was denied. Check the shared access key and device allowlist in the Hub.'
           : /failed to fetch|network request failed|connect the dgx spark api/i.test(message)
@@ -621,6 +730,7 @@ export default function CameraScreen() {
             style={StyleSheet.absoluteFill}
             facing="back"
             zoom={0}
+            pictureSize={pictureSize}
             animateShutter={false}
             onCameraReady={() => setCameraReady(true)}
           />
@@ -660,12 +770,9 @@ export default function CameraScreen() {
           <Pressable
             accessibilityLabel="Pocket mode"
             onPress={() => {
-              setIsPocketMode((value) => {
-                const next = !value;
-                Speech.stop();
-                Speech.speak(next ? 'Pocket mode enabled' : 'Standard mode', { language: 'en-US', rate: 1.0 });
-                return next;
-              });
+              const next = !isPocketMode;
+              setIsPocketMode(next);
+              speak(next ? 'Pocket mode on. I will tell you what is around you. Say Guide to ask me anything.' : 'Pocket mode off.');
             }}
             style={[c.round, isPocketMode && { backgroundColor: '#B7FF56' }]}
           >
@@ -707,6 +814,10 @@ export default function CameraScreen() {
           <Pressable
             style={c.pocketOverlay}
             onPress={() => {
+              // In a pocket the screen brushes against fabric: one repeat at a time.
+              const now = Date.now();
+              if (now - lastRepeatAt.current < 2000) return;
+              lastRepeatAt.current = now;
               speak(current.speech);
             }}
             accessibilityLabel="Pocket mode active. Tap anywhere to repeat surroundings."
@@ -912,7 +1023,7 @@ export default function CameraScreen() {
 
           {!usesBrowserHandTracking && (
             <>
-              {!isSignMode && (detections.length > 0 || (vision?.objects.length ?? 0) > 0) && (
+              {!isSignMode && !sharingUnsupported && (detections.length > 0 || (vision?.objects.length ?? 0) > 0) && (
                 <View style={c.shareRow}>
                   <Pressable onPress={() => void shareCurrentDetections()} disabled={sharingSight} style={[c.shareButton, sharingSight && c.shareButtonDisabled]}>
                     <Ionicons name="radio-outline" size={15} color="#07110F" />

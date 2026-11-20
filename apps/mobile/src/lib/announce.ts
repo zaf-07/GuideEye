@@ -10,6 +10,8 @@ let cloudFile: any = null;
 let webAudio: HTMLAudioElement | null = null;
 let finishTimer: ReturnType<typeof setTimeout> | null = null;
 let cloudRun = 0;
+// Scene narration is tracked apart from replies: the microphone may listen through it.
+let narrationUntil = 0;
 
 function estimateMs(message: string, rate: number) {
   const words = message.trim().split(/\s+/).length;
@@ -144,6 +146,11 @@ export function announce(profile: Profile, message: string, opts?: { urgent?: bo
   if (hasVisionTrack(profile)) {
     const run = ++cloudRun;
     stopCloudVoice();
+    // The assistant outranks scene narration: cut the phrase and take the floor.
+    if (Date.now() < narrationUntil) {
+      narrationUntil = 0;
+      Speech.stop();
+    }
     speakingUntil = Date.now() + estimateMs(message, profile.speechRate);
     if (opts?.urgent) {
       speakNative(profile, message, opts);
@@ -157,6 +164,69 @@ export function announce(profile: Profile, message: string, opts?: { urgent?: bo
   }
 }
 
+/**
+ * Speak now with the on-device voice, whatever the profile. For buttons a
+ * person pressed ("repeat", "speak this sign"): it interrupts anything else,
+ * and the microphone ignores it like any other GuideEye speech.
+ */
+export function speakAloud(message: string, opts?: { rate?: number; language?: string }) {
+  const text = message.trim();
+  if (!text) return;
+  cloudRun += 1;
+  stopCloudVoice();
+  narrationUntil = 0;
+  const rate = opts?.rate ?? 1;
+  speakingUntil = Date.now() + estimateMs(text, rate);
+  Speech.stop();
+  Speech.speak(text, {
+    rate,
+    pitch: 1,
+    language: opts?.language ?? 'en-US',
+    onDone: finished,
+    onStopped: finished,
+    onError: finished,
+  });
+}
+
+function narrationFinished() {
+  narrationUntil = 0;
+}
+
+/**
+ * Scene narration ("chair ahead"). It is the lowest-priority voice: it stays
+ * silent while GuideEye is answering, only ever interrupts its own previous
+ * phrase, and uses the on-device voice so a hazard never waits on the network.
+ * Returns false when it stayed silent.
+ */
+export function narrate(message: string, opts?: { rate?: number }): boolean {
+  const text = message.trim();
+  if (!text || speechBusy(0)) return false;
+  const rate = opts?.rate ?? 1;
+  if (Date.now() < narrationUntil) Speech.stop();
+  narrationUntil = Date.now() + estimateMs(text, rate);
+  Speech.speak(text, {
+    rate,
+    pitch: 1,
+    language: 'en-US',
+    onDone: narrationFinished,
+    onStopped: narrationFinished,
+    onError: narrationFinished,
+  });
+  return true;
+}
+
+/** True while a scene narration phrase is (probably) being spoken. */
+export function narrating() {
+  return Date.now() < narrationUntil;
+}
+
+/** Cut a narration phrase short, for example because the user started a command. */
+export function stopNarration() {
+  if (!narrating()) return;
+  narrationUntil = 0;
+  Speech.stop();
+}
+
 /** Explicitly triggers a test announcement to verify on-device ElevenLabs voice playback. */
 export function testVoice(profile: Profile, sampleText = 'Hello! This is GuideEye speaking with ElevenLabs natural voice.') {
   announce(profile, sampleText);
@@ -165,6 +235,7 @@ export function testVoice(profile: Profile, sampleText = 'Hello! This is GuideEy
 export function stopSpeaking() {
   cloudRun += 1;
   stopCloudVoice();
+  narrationUntil = 0;
   Speech.stop();
   finished();
 }

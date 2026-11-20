@@ -27,7 +27,8 @@ from .services.wearable import WearableError, status as wearable_status, listen_
 
 load_env()
 
-MAX_IMAGE_BYTES = int(os.getenv('MAX_IMAGE_BYTES', str(4 * 1024 * 1024)))
+# Phone photos arrive at several megabytes; they are shrunk as soon as they are read.
+MAX_IMAGE_BYTES = int(os.getenv('MAX_IMAGE_BYTES', str(10 * 1024 * 1024)))
 IMAGE_TYPES = {'image/jpeg', 'image/png', 'image/webp'}
 DEFAULT_ORIGINS = 'http://localhost:4173,http://127.0.0.1:4173,http://localhost:8000,http://127.0.0.1:8000,https://zaf-07.github.io'
 
@@ -66,13 +67,14 @@ class TaskCreate(BaseModel):
 def now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
-async def read_image(image: UploadFile) -> bytes:
+async def read_image(image: UploadFile) -> tuple[bytes, str]:
+    """The uploaded frame, upright and at a workable size, with its type."""
     if image.content_type not in IMAGE_TYPES:
         raise HTTPException(415, 'Send a JPEG, PNG or WebP image')
     body = await image.read(MAX_IMAGE_BYTES + 1)
     if len(body) > MAX_IMAGE_BYTES:
         raise HTTPException(413, 'Image is too large')
-    return body
+    return await asyncio.to_thread(vision.normalize_image, body, image.content_type)
 
 async def detect(body: bytes) -> list[dict]:
     try:
@@ -125,7 +127,7 @@ async def vision_analyze(
     `warnings` always come from the local detector. With `describe=false` the
     cloud is skipped entirely, which is the fast path for a continuous stream.
     """
-    body = await read_image(image)
+    body, mime = await read_image(image)
     started = time.monotonic()
     detections = await detect(body)
     memory.record_detections(detections)
@@ -141,7 +143,7 @@ async def vision_analyze(
         'failed_providers': [],
     }
     if describe:
-        answer = await vision.describe(body, image.content_type, question, detections)
+        answer = await vision.describe(body, mime, question, detections)
         result.update(description=answer['text'], provider=answer['provider'], failed_providers=answer['failed_providers'])
         if remember and answer['provider'] != 'local':
             place = await navigation.place_name(lat, lon) if lat is not None and lon is not None else ''
@@ -161,10 +163,10 @@ async def assistant_respond(
 ):
     """One spoken sentence in, one spoken reply out. `image` is the current camera frame, if any."""
     started = time.monotonic()
-    body = await read_image(image) if image is not None else None
+    body, mime = await read_image(image) if image is not None else (None, 'image/jpeg')
     try:
         location = (lat, lon) if lat is not None and lon is not None else None
-        reply = await assistant.respond(session, text, body, image.content_type if image is not None else 'image/jpeg', location)
+        reply = await assistant.respond(session, text, body, mime, location)
     except vision.VisionError as error:
         raise HTTPException(422, str(error)) from error
     reply['timestamp'] = now()
@@ -176,11 +178,13 @@ async def assistant_respond(
 @app.post('/memory/observe')
 async def memory_observe(image: UploadFile = File(...), lat: Optional[float] = Form(None), lon: Optional[float] = Form(None)):
     """Quietly turn the current frame into a text note. The frame is discarded."""
-    body = await read_image(image)
+    body, mime = await read_image(image)
     detections = await detect(body)
     memory.record_detections(detections)
     place = await navigation.place_name(lat, lon) if lat is not None and lon is not None else ''
-    return await memory.snapshot(body, image.content_type, vision.local_description(detections), place)
+    small, mime = await asyncio.to_thread(vision.normalize_image, body, mime, vision.DESCRIBE_SIDE)
+    # With nothing detected and no model answer there is nothing worth a note.
+    return await memory.snapshot(small, mime, vision.local_description(detections) if detections else '', place)
 
 @app.get('/memory')
 def memory_list():
@@ -430,7 +434,7 @@ async def bridge_sign(images: list[UploadFile] = File(...)):
     """Experimental: a few frames of signing in, a cautious English reading out."""
     if not llm.configured():
         raise HTTPException(503, 'Sign reading needs the cloud vision model')
-    frames = [(await read_image(image), image.content_type) for image in images[:bridge.MAX_FRAMES]]
+    frames = [await read_image(image) for image in images[:bridge.MAX_FRAMES]]
     return await bridge.read_sign(frames)
 
 @app.post('/bridge/translate')
@@ -628,9 +632,9 @@ async def post_wearable_listen(request: Request):
         upload = form.get('image')
         if hasattr(upload, 'read'):
             raw = await upload.read(MAX_IMAGE_BYTES + 1)
-            if len(raw) <= MAX_IMAGE_BYTES:
-                image_bytes = raw
             mime = getattr(upload, 'content_type', 'image/jpeg') or 'image/jpeg'
+            if len(raw) <= MAX_IMAGE_BYTES:
+                image_bytes, mime = vision.normalize_image(raw, mime)
     elif 'application/json' in content_type:
         try:
             data = await request.json()

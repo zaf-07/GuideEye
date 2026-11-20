@@ -1,5 +1,6 @@
-import { noteFrame } from './voice/frame';
+import { isAssistantBusy, noteFrame } from './voice/frame';
 import { NoServerError, apiUrl, isAllowedEndpoint } from './api';
+import { FrameJanitor } from './frameFiles';
 import type { CameraView } from 'expo-camera';
 import { RefObject, useCallback, useEffect, useRef, useState } from 'react';
 import { detectObjects, detectVideoFrame, localDetectorBackend, warmUpDetector } from './detector';
@@ -69,7 +70,12 @@ export type VisionResult = {
   should_speak?: boolean;
   warnings?: string[];
   approaching?: ApproachingWarning[];
+  /** What the result describes, so narration can treat each kind differently. */
+  kind?: 'objects' | 'blocked' | 'empty' | 'description';
 };
+
+/** The latest sentence from the cloud model about the whole scene. */
+export type SceneDescription = { text: string; key: string; at: number };
 
 type TrackingResult = {
   objects: VisionObject[];
@@ -114,10 +120,20 @@ export type VisionPerformance = {
 };
 
 // Local object frames should follow camera movement; cloud narration can update less often.
-// Expo Camera exposes still capture rather than a native frame processor.
-// A sub-second cadence keeps guidance responsive without continuously
-// interrupting the iOS preview or saturating the CPU with JPEG decoding.
-const LOCAL_SCAN_INTERVAL_MS = 450;
+// Expo Camera exposes still capture rather than a native frame processor, so
+// each scan is capture + shrink + detect. That work is the pacing; this pause
+// only leaves the UI thread room between scans.
+const LOCAL_SCAN_INTERVAL_MS = 120;
+// A cloud description costs an upload and a rate-limited model call. Ask for a
+// new one soon after the scene changes, otherwise only now and then.
+const CLOUD_CHANGE_GAP_MS = 5000;
+const CLOUD_REFRESH_MS = 20000;
+// With no on-device detector the cloud is the only pair of eyes, so it is
+// asked steadily, but never back to back.
+const CLOUD_ONLY_GAP_MS = 6000;
+// A server without its own detector answers the tracking call with nothing.
+// Stop sending it a photo every second; look again occasionally.
+const TRACKING_RECHECK_MS = 60000;
 // While the browser detects straight from the video, the scan loop only
 // decides when the server and cloud need a new photo.
 const LIVE_SCAN_INTERVAL_MS = 250;
@@ -308,7 +324,11 @@ async function analyzeFrame(uri: string, mode: AssistMode, previousSceneKey: str
     };
   }
   const analysis = await analyzeScene(uri, true, signal);
-  const speech = (analysis.description || '').trim();
+  // When its model call fails the server answers with a sentence built from
+  // its own detector. With no detections that sentence is only "I do not
+  // recognise anything", which is a failure report, not a description.
+  const fromModel = Boolean(analysis.provider) && analysis.provider !== 'local';
+  const speech = fromModel || analysis.detections.length ? (analysis.description || '').trim() : '';
   const key = sceneKeyFor(analysis);
   return {
     summary: speech.split(/(?<=[.!?])\s+/)[0].slice(0, 100),
@@ -320,6 +340,7 @@ async function analyzeFrame(uri: string, mode: AssistMode, previousSceneKey: str
     task: 'scene',
     should_speak: analysis.warnings.length > 0 && key !== previousSceneKey,
     warnings: analysis.warnings,
+    kind: 'description',
   };
 }
 
@@ -436,6 +457,35 @@ function blockedDirection(blocked: BlockedView | null | undefined): 'ahead' | 'o
   return middle < 0.38 ? 'on the left' : middle > 0.62 ? 'on the right' : 'ahead';
 }
 
+const NEAR_METERS = 1.2;
+
+function isNear(item: LocalDetection) {
+  return typeof item.distance_m === 'number' && Number.isFinite(item.distance_m) && item.distance_m > 0 && item.distance_m < NEAR_METERS;
+}
+
+/**
+ * Distance the way a person would say it. The estimate comes from the size of
+ * the box and a typical height for the object, so it is rough: say "very
+ * close" or a rounded figure, never "2.3 m".
+ */
+function spokenDistance(item: LocalDetection) {
+  const distance = item.distance_m;
+  if (typeof distance !== 'number' || !Number.isFinite(distance) || distance <= 0 || distance > 6) return '';
+  if (distance < NEAR_METERS) return ', very close';
+  const rounded = distance < 3 ? Math.round(distance * 2) / 2 : Math.round(distance);
+  return `, about ${rounded} ${rounded === 1 ? 'meter' : 'meters'}`;
+}
+
+function plural(label: string) {
+  if (label === 'person') return 'people';
+  if (/(s|x|ch|sh)$/.test(label)) return `${label}es`;
+  if (/[^aeiou]y$/.test(label)) return `${label.slice(0, -1)}ies`;
+  if (label.endsWith('fe')) return `${label.slice(0, -2)}ves`;
+  return `${label}s`;
+}
+
+const WHERE: Record<'ahead' | 'left' | 'right', string> = { ahead: 'ahead', left: 'on your left', right: 'on your right' };
+
 export function synthesizeLocalSceneResult(
   detections: LocalDetection[],
   previousSceneKey: string,
@@ -452,7 +502,7 @@ export function synthesizeLocalSceneResult(
     height: d.height,
     // The local tracker derives an approximate range from the detected box
     // height and a class-height prior. It is useful for the live map, but is
-    // not calibrated depth and never drives mobility or collision warnings.
+    // not calibrated depth.
     distance_m: typeof d.distance_m === 'number' && Number.isFinite(d.distance_m) && d.distance_m > 0
       ? d.distance_m
       : null,
@@ -460,9 +510,6 @@ export function synthesizeLocalSceneResult(
     track_id: d.id ?? null,
   }));
 
-  // Local detections are visual hints, not calibrated obstacle or collision
-  // measurements. Mobility warnings stay disabled until validated separately.
-  // 1. No recognized detections
   if (detections.length === 0) {
     // Nothing named is not the same as nothing there: a plain wall, a trunk or
     // a covered lens has no label. Say what the camera can tell, and never
@@ -478,6 +525,7 @@ export function synthesizeLocalSceneResult(
         objects: [],
         task: mode,
         should_speak: scene_key !== previousSceneKey,
+        kind: 'blocked',
       };
     }
     const direction = blockedDirection(blocked);
@@ -492,55 +540,53 @@ export function synthesizeLocalSceneResult(
         objects: [],
         task: mode,
         should_speak: scene_key !== previousSceneKey,
+        kind: 'blocked',
       };
     }
     const scene_key = 'empty_path';
     return {
-      summary: 'No objects recognized',
-      speech: 'No objects recognized ahead.',
+      summary: 'Nothing recognized yet',
+      speech: 'Nothing recognized ahead.',
       scene_key,
       urgency: 'low',
       changed: scene_key !== previousSceneKey,
       objects: [],
       task: mode,
-      should_speak: scene_key !== previousSceneKey,
+      should_speak: false,
+      kind: 'empty',
     };
   }
 
-  // 2. Natural spatial narration of detected objects with distance awareness
-  const ahead = detections.filter((d) => d.direction === 'ahead');
-  const left = detections.filter((d) => d.direction === 'left');
-  const right = detections.filter((d) => d.direction === 'right');
-
-  const formatDet = (d: LocalDetection) =>
-    typeof d.distance_m === 'number' && Number.isFinite(d.distance_m)
-      ? `${d.label} at ${d.distance_m}m`
-      : d.label;
-
+  // One phrase per kind of thing per direction: "2 people ahead", not a list
+  // of every box. The tracker has already put approaching and near things first.
+  const groups = new Map<string, { label: string; direction: 'ahead' | 'left' | 'right'; items: LocalDetection[] }>();
+  for (const item of detections) {
+    const direction = item.direction || 'ahead';
+    const key = `${item.label}@${direction}`;
+    const group = groups.get(key);
+    if (group) group.items.push(item);
+    else groups.set(key, { label: item.label, direction, items: [item] });
+  }
+  const ordered = [...groups.values()].sort((a, b) => Number(b.direction === 'ahead') - Number(a.direction === 'ahead'));
   const approaching = detections.find((d) => d.is_approaching);
-  const parts: string[] = [];
-  if (approaching) {
-    parts.push(`Caution: ${approaching.label} approaching at ${approaching.distance_m ? approaching.distance_m + 'm' : 'close range'}`);
-  }
-  if (ahead.length > 0) {
-    parts.push(`Ahead: ${ahead.slice(0, 2).map(formatDet).join(', ')}`);
-  }
-  if (right.length > 0) {
-    parts.push(`To your right: ${right.slice(0, 2).map(formatDet).join(', ')}`);
-  }
-  if (left.length > 0) {
-    parts.push(`To your left: ${left.slice(0, 2).map(formatDet).join(', ')}`);
-  }
-
-  const speech = parts.join('. ') + '.';
-  const scene_key = detections
+  const phrases = ordered.slice(0, 3).map((group) => {
+    const count = group.items.length;
+    const name = count > 1 ? `${count} ${plural(group.label)}` : group.label;
+    const nearest = group.items.reduce((best, item) => ((item.distance_m ?? 99) < (best.distance_m ?? 99) ? item : best), group.items[0]);
+    return `${name[0].toUpperCase()}${name.slice(1)} ${WHERE[group.direction]}${spokenDistance(nearest)}`;
+  });
+  const speech = `${approaching ? `Careful, ${approaching.label} coming closer. ` : ''}${phrases.join('. ')}.`;
+  // The key is what narration compares to decide "has the scene changed". It
+  // must not move when a box wobbles, so it holds which things are where and
+  // whether one is very close, never a measured distance.
+  const scene_key = `${approaching ? 'approach:' : ''}${ordered
     .slice(0, 4)
-    .map((d) => `${d.label}_${d.direction}_${d.distance_m ?? ''}`)
+    .map((group) => `${group.label}@${group.direction}${group.items.some(isNear) ? '!' : ''}`)
     .sort()
-    .join('|');
+    .join('|')}`;
 
   return {
-    summary: `Nearby: ${detections.slice(0, 3).map(formatDet).join(', ')}`,
+    summary: phrases[0],
     speech,
     scene_key,
     urgency: approaching ? 'high' : 'low',
@@ -548,11 +594,20 @@ export function synthesizeLocalSceneResult(
     objects: visionObjects,
     task: mode,
     should_speak: scene_key !== previousSceneKey,
+    kind: 'objects',
   };
+}
+
+const frameJanitor = new FrameJanitor();
+
+/** Hand a frame captured outside the scan loop to the same clean-up. */
+export function trackFrameFile(uri: string | null | undefined) {
+  if (uri) frameJanitor.track(uri);
 }
 
 export function useVisionLoop(camera: RefObject<CameraView | null>, mode: AssistMode, enabled: boolean) {
   const [result, setResult] = useState<VisionResult | null>(null);
+  const [description, setDescription] = useState<SceneDescription | null>(null);
   const [state, setState] = useState<VisionState>('starting');
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const [detections, setDetections] = useState<LocalDetection[]>([]);
@@ -574,11 +629,15 @@ export function useVisionLoop(camera: RefObject<CameraView | null>, mode: Assist
   const generation = useRef(0);
   const failures = useRef(0);
   const sceneKey = useRef('');
+  const descriptionKey = useRef('');
   const localSignature = useRef('');
-  const lastCloudAnalysis = useRef(0);
+  // The scene changed since the cloud last described it.
+  const cloudDirty = useRef(true);
+  const lastCloudRequest = useRef(0);
   const lastTrackingAnalysis = useRef(0);
   const trackingInFlight = useRef(false);
   const trackingFailures = useRef(0);
+  const trackingDisabledUntil = useRef(0);
   // Last fresh server tracking answer, lent to local scans until it expires.
   const trackedSnapshot = useRef<TrackedSnapshot | null>(null);
   const withDepth = useCallback((local: VisionResult): VisionResult => (
@@ -608,40 +667,49 @@ export function useVisionLoop(camera: RefObject<CameraView | null>, mode: Assist
     const live = mode === 'scene' && liveLocal.current && Date.now() - liveLocal.current.at <= LIVE_LOCAL_FRESH_MS
       ? liveLocal.current.result
       : null;
+    // Is it time to ask the cloud model for a sentence about the scene?
+    const cloudIsDue = (now: number, localAvailable: boolean) => {
+      if (!activeApiUrl || cloudInFlight.current || isAssistantBusy()) return false;
+      const since = now - lastCloudRequest.current;
+      if (!localAvailable) return since >= CLOUD_ONLY_GAP_MS;
+      return since >= (cloudDirty.current ? CLOUD_CHANGE_GAP_MS : CLOUD_REFRESH_MS);
+    };
+    const trackingIsDue = (now: number) => Boolean(activeApiUrl)
+      && now >= trackingDisabledUntil.current
+      && now - lastTrackingAnalysis.current >= 900
+      && !trackingInFlight.current;
+    const showLocal = (local: DetectionResult) => {
+      const localResult = withDepth(synthesizeLocalSceneResult(local.detections, sceneKey.current, mode, local.blocked));
+      sceneKey.current = localResult.scene_key;
+      setResult(localResult);
+      setLastUpdated(Date.now());
+    };
+    const noteSignature = (local: DetectionResult) => {
+      const signature = detectionSignature(local.detections);
+      if (signature !== localSignature.current) cloudDirty.current = true;
+      localSignature.current = signature;
+    };
     try {
       if (live) {
         // Boxes already update every video frame; only capture a photo when the
         // server tracker or the cloud description is due for a new frame.
         nextDelay = LIVE_SCAN_INTERVAL_MS;
         const now = Date.now();
-        const signature = detectionSignature(live.detections);
-        const shouldUseCloud = Boolean(activeApiUrl) && (signature !== localSignature.current || now - lastCloudAnalysis.current >= 8000);
-        const trackingDue = Boolean(activeApiUrl) && now - lastTrackingAnalysis.current >= 900 && !trackingInFlight.current;
-        if (!trackingDue && !(shouldUseCloud && !cloudInFlight.current)) {
-          localSignature.current = signature;
-          failures.current = 0;
-          setState('live');
-          if (!activeApiUrl || !shouldUseCloud) {
-            const localResult = withDepth(synthesizeLocalSceneResult(live.detections, sceneKey.current, mode, live.blocked));
-            sceneKey.current = localResult.scene_key;
-            setResult(localResult);
-            setLastUpdated(Date.now());
-          }
-          return;
-        }
+        noteSignature(live);
+        failures.current = 0;
+        setState('live');
+        showLocal(live);
+        if (!trackingIsDue(now) && !cloudIsDue(now, true)) return;
       }
       const captureStartedAt = performanceNow();
-      // Scene Assist benefits from a higher-quality source image: it preserves
-      // detail for smaller objects before the local model letterboxes the
-      // frame, and for the optional server tracker. Sign capture stays at the
-      // previous quality to keep its overlapping three-frame windows quick.
       const picture = await camera.current.takePictureAsync({
-        quality: 0.5,
+        quality: 0.55,
         skipProcessing: true,
         shutterSound: false,
       });
       if (!picture?.uri) throw new Error('Camera did not return an image');
       noteFrame(picture.uri);
+      frameJanitor.track(picture.uri);
       const capturedAt = Date.now();
       const captureEndedAt = performanceNow();
       captureTimes.current.push(captureEndedAt);
@@ -710,27 +778,35 @@ export function useVisionLoop(camera: RefObject<CameraView | null>, mode: Assist
         setDetections(local.detections);
         setBlocked(local.blocked ? { ...local.blocked, at: Date.now() } : null);
         setPerformance((previous) => ({ ...previous, local_detection_ms: localDetectionMs }));
+        noteSignature(local);
+        // The on-device result is shown the moment it exists. It never waits
+        // for the network, and a cloud sentence never replaces it.
+        if (local.available) showLocal(local);
       }
-      const signature = detectionSignature(local.detections);
       const now = Date.now();
-      const shouldUseCloud = Boolean(activeApiUrl) && (!local.available || signature !== localSignature.current || now - lastCloudAnalysis.current >= 8000);
-      localSignature.current = signature;
       failures.current = 0;
       setState('live');
 
       // Geometry has its own API path and cadence. It can update tracked boxes
-      // while Groq is describing an earlier frame; it never creates a spoken
-      // collision warning in the client.
-      if (activeApiUrl && now - lastTrackingAnalysis.current >= 900 && !trackingInFlight.current) {
+      // while the cloud model is describing an earlier frame; it never creates
+      // a spoken collision warning in the client.
+      if (trackingIsDue(now)) {
         trackingInFlight.current = true;
         const trackingController = new AbortController();
         const trackingFrameStartedAt = performanceNow();
         void trackFrame(picture.uri, trackingController.signal)
           .then((tracking) => {
             if (runGeneration !== generation.current) return;
-            const trackingAgeMs = Math.round(performanceNow() - trackingFrameStartedAt);
             lastTrackingAnalysis.current = Date.now();
             trackingFailures.current = 0;
+            if (tracking.detector === 'disabled') {
+              // This server has no detector of its own. Its empty answer must
+              // not wipe what the phone detected.
+              trackingDisabledUntil.current = Date.now() + TRACKING_RECHECK_MS;
+              setPerformance((previous) => ({ ...previous, tracking_status: 'waiting' }));
+              return;
+            }
+            const trackingAgeMs = Math.round(performanceNow() - trackingFrameStartedAt);
             setPerformance((previous) => ({
               ...previous,
               tracking_latency_ms: tracking.tracking_latency_ms,
@@ -766,39 +842,38 @@ export function useVisionLoop(camera: RefObject<CameraView | null>, mode: Assist
           .finally(() => { trackingInFlight.current = false; });
       }
 
-      // In purely offline mode (or while waiting for cloud), synthesize local spatial speech
-      if (!activeApiUrl || !shouldUseCloud) {
-        const localResult = withDepth(synthesizeLocalSceneResult(local.detections, sceneKey.current, mode, local.blocked));
-        sceneKey.current = localResult.scene_key;
-        setResult(localResult);
-        setLastUpdated(Date.now());
-      }
-
-      // Never make the bounding boxes wait for a network request. The previous
-      // implementation paused local updates while the cloud description ran,
-      // leaving frames behind when the user turned the camera.
-      if (shouldUseCloud && !cloudInFlight.current) {
+      if (cloudIsDue(now, local.available)) {
         const cloudController = new AbortController();
         controller.current = cloudController;
         cloudInFlight.current = true;
-        void analyzeFrame(picture.uri, mode, sceneKey.current, cloudController.signal)
+        cloudDirty.current = false;
+        lastCloudRequest.current = now;
+        void analyzeFrame(picture.uri, mode, descriptionKey.current, cloudController.signal)
           .then((next) => {
             if (cloudController.signal.aborted || runGeneration !== generation.current) return;
-            sceneKey.current = next.scene_key;
-            lastCloudAnalysis.current = Date.now();
-            setResult(next);
-            setLastUpdated(Date.now());
+            if (!next.speech) {
+              // The server could not get a sentence from its model. Try again
+              // later instead of showing its "nothing recognised" filler.
+              cloudDirty.current = true;
+              lastCloudRequest.current = Date.now() + 10_000 - CLOUD_CHANGE_GAP_MS;
+              return;
+            }
+            descriptionKey.current = next.scene_key;
+            setDescription({ text: next.speech, key: next.scene_key, at: Date.now() });
+            if (!local.available) {
+              // No on-device detector: the cloud answer is the only result there is.
+              sceneKey.current = next.scene_key;
+              setResult(next);
+              setLastUpdated(Date.now());
+            }
           })
           .catch((error) => {
             if (cloudController.signal.aborted || runGeneration !== generation.current) return;
             // Local detection remains live even when optional cloud narration is unavailable.
-            lastCloudAnalysis.current = Date.now() + 10_000;
-            console.warn('Cloud scene description unavailable (backing off 10s)', error);
-            // Fall back to local synthesis on cloud failure
-            const localFallback = withDepth(synthesizeLocalSceneResult(local.detections, sceneKey.current, mode, local.blocked));
-            sceneKey.current = localFallback.scene_key;
-            setResult(localFallback);
-            setLastUpdated(Date.now());
+            cloudDirty.current = true;
+            const retryAfterMs = Math.min(60_000, ((error as Error & { retryAfter?: number }).retryAfter || 0) * 1000);
+            lastCloudRequest.current = Date.now() + Math.max(10_000, retryAfterMs) - CLOUD_CHANGE_GAP_MS;
+            console.warn('Cloud scene description unavailable (backing off)', error);
           })
           .finally(() => {
             if (controller.current === cloudController) controller.current = null;
@@ -811,7 +886,9 @@ export function useVisionLoop(camera: RefObject<CameraView | null>, mode: Assist
       failures.current += 1;
       setState('offline');
       const retryAfter = (error as Error & { retryAfter?: number }).retryAfter || 0;
-      nextDelay = Math.max(retryAfter * 1000, Math.min(2000 * 2 ** (failures.current - 1), 15000));
+      // A single failed capture (the camera was busy for a moment) is retried
+      // quickly; only repeated failures back off.
+      nextDelay = Math.max(retryAfter * 1000, failures.current === 1 ? 400 : Math.min(1000 * 2 ** (failures.current - 1), 15000));
     } finally {
       controller.current = null;
       if (enabled && runGeneration === generation.current) {
@@ -874,8 +951,22 @@ export function useVisionLoop(camera: RefObject<CameraView | null>, mode: Assist
     };
   }, [enabled, mode]);
 
+  // Native: load the model while the camera is still opening, so the first
+  // scan does not pay for it.
+  useEffect(() => {
+    if (enabled && mode === 'scene' && typeof document === 'undefined') void warmUpDetector().catch(() => {});
+  }, [enabled, mode]);
+
+  // Frames outlive the screen for a moment: an assistant request may still be
+  // uploading the last one.
+  useEffect(() => () => {
+    setTimeout(() => frameJanitor.clear(), 15000);
+  }, []);
+
   const scanNow = useCallback(() => {
     stop();
+    cloudDirty.current = true;
+    lastCloudRequest.current = 0;
     const current = generation.current;
     void run(current);
   }, [run, stop]);
@@ -884,16 +975,20 @@ export function useVisionLoop(camera: RefObject<CameraView | null>, mode: Assist
     stop();
     generation.current += 1;
     sceneKey.current = '';
+    descriptionKey.current = '';
     localSignature.current = '';
-    lastCloudAnalysis.current = 0;
+    cloudDirty.current = true;
+    lastCloudRequest.current = 0;
     lastTrackingAnalysis.current = 0;
     trackingInFlight.current = false;
     trackingFailures.current = 0;
+    trackingDisabledUntil.current = 0;
     captureTimes.current = [];
     signFrames.current = [];
     signTranscript.current = '';
     failures.current = 0;
     setResult(null);
+    setDescription(null);
     setCameraCoach(null);
     trackedSnapshot.current = null;
     setObstacles(null);
@@ -908,7 +1003,7 @@ export function useVisionLoop(camera: RefObject<CameraView | null>, mode: Assist
     return stop;
   }, [enabled, mode, run, stop]);
 
-  return { result, state, lastUpdated, detections, cameraCoach, obstacles, blocked, performance, scanNow };
+  return { result, description, state, lastUpdated, detections, cameraCoach, obstacles, blocked, performance, scanNow };
 }
 
 function performanceNow() {

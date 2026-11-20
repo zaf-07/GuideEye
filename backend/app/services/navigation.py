@@ -155,6 +155,9 @@ def destination_query(text: str) -> tuple[str, str]:
     match = DESTINATION.search(text.lower().strip())
     wanted = (match.group(1) if match else text.lower()).strip()
     wanted = re.sub(r'^(nearest|closest)\s+', '', wanted)
+    # "a pharmacy open now", "a cafe near me": the place is the first words.
+    for _ in range(2):
+        wanted = re.sub(r"\s+(?:that is |that's |which is )?(?:open(?: right)? now|open|nearby|near me|near here|close by|around here|right now|please)$", '', wanted)
     for word, term in CATEGORIES.items():
         if re.search(rf'\b{word}\b', wanted) and len(wanted.split()) <= 2:
             return term, term

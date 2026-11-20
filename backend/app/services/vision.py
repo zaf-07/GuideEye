@@ -39,7 +39,8 @@ SYSTEM_PROMPT = (
     'Say where things are with words like ahead, left and right. '
     'Never give distances unless the on-device detector explicitly provides an estimated distance. '
     'Never say a path is safe or clear to walk. '
-    'If asked to read text, read it exactly. If you are not sure, say so plainly.'
+    'If asked to read text, read it exactly. If you are not sure, say so plainly. '
+    'If the request is not about what the camera sees, answer it briefly instead of describing the picture.'
 )
 DEFAULT_QUESTION = 'Briefly, what is in front of me?'
 
@@ -57,6 +58,38 @@ def setting(name: str, default: str = '') -> str:
 
 class VisionError(Exception):
     """The image could not be read."""
+
+
+# ---------- Incoming frames ----------
+
+# Long edge, in pixels. Enough to read a letter; a describing model needs less.
+MAX_FRAME_SIDE = 1600
+DESCRIBE_SIDE = 1024
+CLOUD_FAILED = 'I could not check the camera view just now. Please ask again in a moment.'
+
+
+def normalize_image(image: bytes, mime: str = 'image/jpeg', max_side: int = MAX_FRAME_SIDE) -> tuple[bytes, str]:
+    """A phone photo as the person saw it: upright, and no larger than needed.
+
+    Phone cameras store the sensor's sideways pixels and note the rotation in
+    EXIF. Nothing downstream reads that note, so the detector and the cloud
+    model were both looking at pictures lying on their side, and a twelve
+    megapixel photo was sent to a model that is rate-limited by image size.
+    Bytes Pillow cannot read are returned untouched; the detector reports them.
+    """
+    try:
+        from PIL import Image, ImageOps
+        frame = Image.open(BytesIO(image))
+        upright = frame.getexif().get(0x0112, 1) in (1, None)
+        if upright and max(frame.size) <= max_side and frame.format == 'JPEG' and frame.mode == 'RGB':
+            return image, 'image/jpeg'
+        frame = ImageOps.exif_transpose(frame).convert('RGB')
+        frame.thumbnail((max_side, max_side))
+        out = BytesIO()
+        frame.save(out, 'JPEG', quality=85)
+        return out.getvalue(), 'image/jpeg'
+    except Exception:
+        return image, mime
 
 
 # ---------- Local detection ----------
@@ -307,6 +340,24 @@ async def ask_minimax(image: bytes, mime: str, question: str, detections: list[d
     )
 
 
+def _retry_delay(error) -> float | None:
+    """Seconds to wait before one retry, or None when retrying cannot help.
+
+    A rate limit says how long to wait. Retrying sooner only spends another
+    request, and waiting longer than a spoken answer can is pointless.
+    """
+    response = getattr(error, 'response', None)
+    if response is None:
+        return 0.4  # network hiccup or timeout
+    if response.status_code == 429:
+        try:
+            wait = float(response.headers.get('retry-after', ''))
+        except (TypeError, ValueError):
+            return None
+        return wait if 0 <= wait <= 2.0 else None
+    return 0.4 if response.status_code >= 500 else None
+
+
 async def ask_groq(image: bytes, mime: str, question: str, detections: list[dict]) -> str:
     """Groq vision with one short retry for transient provider failures."""
     import asyncio
@@ -335,10 +386,11 @@ async def ask_groq(image: bytes, mime: str, question: str, detections: list[dict
                 )
                 response.raise_for_status()
             break
-        except httpx.HTTPError:
-            if attempt:
+        except httpx.HTTPError as error:
+            delay = _retry_delay(error)
+            if attempt or delay is None:
                 raise
-            await asyncio.sleep(0.4)
+            await asyncio.sleep(delay)
     text = (response.json()['choices'][0]['message']['content'] or '').strip()
     if not text:
         raise ValueError('Groq returned no text')
@@ -359,10 +411,18 @@ def configured_providers() -> list[str]:
     return [name for name in order if name in PROVIDERS and os.getenv(PROVIDERS[name][0])]
 
 
-async def describe(image: bytes, mime: str, question: str, detections: list[dict], providers=None) -> dict:
-    """Try each cloud provider in turn; fall back to the local detector's sentence."""
+async def describe(image: bytes, mime: str, question: str, detections: list[dict], providers=None,
+                   max_side: int = DESCRIBE_SIDE) -> dict:
+    """Try each cloud provider in turn; fall back to the local detector's sentence.
+
+    `max_side` caps the picture sent to the model. Describing a scene needs far
+    fewer pixels than reading a page, and smaller pictures stay inside the
+    provider's rate limit for longer.
+    """
     if providers is None:
         providers = [(name, PROVIDERS[name][1]) for name in configured_providers()]
+    if providers and image:
+        image, mime = normalize_image(image, mime, max_side)
     failed: list[str] = []
     for name, ask in providers:
         try:
@@ -370,4 +430,9 @@ async def describe(image: bytes, mime: str, question: str, detections: list[dict
             return {'text': text, 'provider': name, 'failed_providers': failed}
         except Exception as error:  # timeout, quota, bad response: try the next one
             failed.append(f'{name}: {type(error).__name__}')
+    if failed and not detections:
+        # The model was asked and did not answer, and there is no detector
+        # result to fall back on. "I do not recognise anything" would be heard
+        # as "nothing is there"; say that the check itself failed.
+        return {'text': CLOUD_FAILED, 'provider': 'local', 'failed_providers': failed}
     return {'text': local_description(detections), 'provider': 'local', 'failed_providers': failed}

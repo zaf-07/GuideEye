@@ -139,6 +139,11 @@ NAV = re.compile(
     r'\b(take|guide|walk|navigate|lead|bring|get) me to\b|\b(directions?|route|way) to\b'
     r'|\bhow do i get to\b|\bnavigate to\b|\b(nearest|closest)\b'
 )
+# "Find a pharmacy open now", "is there a cafe nearby", "where is the bathroom".
+NEARBY_PLACE = re.compile(
+    r"\b(?:find|locate|look for|where is|where's|is there|are there)\s+(?:me\s+)?(?:a |an |the |any )?(?:nearest |closest |nearby )?(?:"
+    + '|'.join(sorted(navigation.CATEGORIES, key=len, reverse=True)) + r')\b'
+)
 NAV_NEXT = re.compile(
     r"\bwhich way\b|\b(where|when) do i (turn|go)\b|\bnext (turn|step|direction)\b|\b(do|should) i turn\b"
     r"|\bhow (far|much further|much longer)\b|\bam i (going|on) the right way\b"
@@ -162,6 +167,21 @@ ERRAND = re.compile(
 ERRAND_STATUS = re.compile(r"\berrand\b|\b(?:is it|is that|are you) (?:ready|done|finished)\b|\bany (?:update|news)\b|\bstill working\b")
 ERRAND_ASKS = re.compile(r"should i go ahead\?\s*$", re.IGNORECASE)
 ERRAND_TTL_SECONDS = 900
+# "Remember that my keys are on the kitchen table": a fact said aloud, no camera needed.
+REMEMBER_FACT = re.compile(r"^\W*(?:please )?remember(?: that)?\s+(.+)$", re.IGNORECASE)
+# Requests that are about what the camera sees.
+CAMERA_REQUEST = re.compile(
+    r"\bin front of me\b|\bahead of me\b|\b(?:see|look|describe|read|scan|show|camera)\b|\bwhat colou?r\b"
+    r"|\bwhat(?:'s| is) (?:this|that|it)\b|\bwhat does (?:it|this|that)\b|\bwho is (?:this|that|here)\b"
+)
+CHAT_PROMPT = (
+    'You are GuideEye, a voice assistant for a blind or low-vision person. '
+    'Answer in one or two short sentences that sound natural when spoken aloud. '
+    'You have no camera image for this request: never describe surroundings or invent facts about them. '
+    'If the request needs the camera, say to turn the camera on and ask again. '
+    'If the person says something is wrong or not working, ask one short question about what happened.'
+)
+UNKNOWN_REQUEST = 'I did not catch what you need. Say help to hear what I can do.'
 HELP = re.compile(r'\bwhat can you do\b|^\W*help\b')
 GREETING = re.compile(r'^\W*(hi|hello|hey|good (morning|afternoon|evening)|howdy)\b')
 
@@ -236,7 +256,7 @@ def route(text: str, has_pending: bool = False, navigating: bool = False) -> str
         return 'call'
     if OPEN_APP.search(value):
         return 'open_app'
-    if NAV.search(value):
+    if NAV.search(value) or NEARBY_PLACE.search(value):
         return 'navigate'
     if SCAN_PAY.search(value):
         return 'scan_pay'
@@ -257,6 +277,17 @@ def route(text: str, has_pending: bool = False, navigating: bool = False) -> str
     if YES.search(value) or NO.search(value):
         return 'nothing_pending'
     return 'see'
+
+
+def spoken_fact(text: str) -> str:
+    """The fact in 'remember that my keys are on the table'; empty for 'remember this' (a camera request)."""
+    match = REMEMBER_FACT.search(text.strip())
+    if not match:
+        return ''
+    fact = match.group(1).strip(' .!?')
+    if len(fact.split()) < 3 or re.match(r'(?:this|that|it|where|what|these|those)\b', fact, re.IGNORECASE):
+        return ''
+    return fact
 
 
 def message_body(text: str) -> str:
@@ -454,12 +485,33 @@ class Assistant:
             reply['say'] = HELP_TEXT
         elif intent == 'greeting':
             reply['say'] = 'Hello! I am GuideEye. I can describe what is in front of you, navigate, read text, or remember your items.'
+        elif intent == 'remember' and spoken_fact(text):
+            fact = spoken_fact(text)
+            place = await self.place_name(*location) if location else ''
+            self.memory.add_note('note', fact[0].upper() + fact[1:], place=place)
+            reply['say'] = f'I will remember that: {fact}.'
         elif image is None:
-            reply['say'] = 'I need the camera for that. Please turn the camera on.'
+            if intent == 'see' and not CAMERA_REQUEST.search(text.lower()):
+                await self._chat(reply, text)
+            else:
+                reply['say'] = 'I need the camera for that. Please turn the camera on.'
         else:
             place = await self.place_name(*location) if location else ''
             await self._look(reply, intent, text, image, mime, place)
         return reply
+
+    async def _chat(self, reply: dict, text: str) -> None:
+        """A request no rule matched and that is not about the camera: answer it, or say it was not understood."""
+        from . import llm
+        if llm.configured():
+            try:
+                answer = (await llm.complete([{'text': text}], system=CHAT_PROMPT)).strip()
+                if answer:
+                    reply.update(intent='chat', say=answer[:400], provider='llm')
+                    return
+            except Exception:
+                pass
+        reply.update(intent='unknown', say=UNKNOWN_REQUEST)
 
     # ----- errands -----
 
@@ -652,6 +704,7 @@ class Assistant:
 
     async def _where(self, reply: dict, image: bytes | None, mime: str, location: tuple[float, float] | None) -> None:
         parts = []
+        address = ''
         if location is not None:
             address = await navigation.address(*location)
             parts.append(f'You are at {address}.' if address else 'I have your GPS position, but could not look up the address.')
@@ -664,7 +717,8 @@ class Assistant:
             parts.append(answer['text'])
             reply.update(detections=detections, provider=answer['provider'])
         reply['say'] = ' '.join(parts)
-        if location is not None:
+        if location is not None and address:
+            # Only a real address is a memory; "could not look up the address" is not a place.
             self.memory.add_note('place', reply['say'])
 
     async def resolve_place(self, wanted: str, location: tuple[float, float] | None) -> dict | None:
@@ -850,12 +904,18 @@ class Assistant:
         reply['detections'] = detections
         reply['warnings'] = vision.hazard_warnings(detections)
         if intent == 'remember':
-            note = await self.memory.snapshot(image, mime, vision.local_description(detections), place)
-            reply.update(say=f'I will remember this. {note["text"]}', provider=note['provider'])
+            small, small_mime = await asyncio.to_thread(vision.normalize_image, image, mime, vision.DESCRIBE_SIDE)
+            note = await self.memory.snapshot(small, small_mime, vision.local_description(detections) if detections else '', place)
+            if note['text']:
+                reply.update(say=f'I will remember this. {note["text"]}', provider=note['provider'])
+            else:
+                reply.update(say='I could not make out what is in view, so I did not save it. Hold the camera steady and ask again.',
+                             provider=note['provider'])
             return
         if READ.search(text.lower()):
-            # Reading is a different job from describing: ask for the words only, with no object hints.
-            answer = await vision.describe(image, mime, READ_QUESTION, [])
+            # Reading is a different job from describing: ask for the words only, with no object
+            # hints, and keep the picture large enough for small print.
+            answer = await vision.describe(image, mime, READ_QUESTION, [], max_side=vision.MAX_FRAME_SIDE)
         else:
             answer = await vision.describe(image, mime, text, detections)
         reply.update(say=answer['text'], provider=answer['provider'])

@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { askAssistant, reportLocation, routeSnapshot, type AssistantReply, type Coordinates, type RouteSnapshot } from './assistant';
 import { announce } from './lib/announce';
 import { useProfile } from './state/ProfileContext';
-import { captureFrame, hasFrameSource, needsCamera, waitForFrameSource } from './voice/frame';
+import { captureFrame, hasFrameSource, needsCamera, setAssistantBusy, waitForFrameSource } from './voice/frame';
 
 const ROUTE_UPDATE_METERS = 8;
 const ROUTE_UPDATE_MS = 4000;
@@ -78,6 +78,7 @@ export function useAssistant() {
       const request = text.trim();
       if (!request) return null;
       setBusy(true);
+      setAssistantBusy(true);
       setError('');
       try {
         const [location, frame] = await Promise.all([currentCoordinates(), frameFor(request, say)]);
@@ -98,6 +99,7 @@ export function useAssistant() {
         return null;
       } finally {
         setBusy(false);
+        setAssistantBusy(false);
       }
     },
     [say],
