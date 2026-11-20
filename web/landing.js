@@ -96,7 +96,7 @@ else if (/Win/i.test(platform)) detected = 'windows';
 else if (/Linux|X11/i.test(platform)) detected = 'linux';
 
 const recommendations = {
-  android: { label: 'Android detected', title: 'GuideEye for Android', detail: 'The full phone assistant with Vexo bracelet support.', button: 'Download APK · 12.9 MB', href: release + 'GuideBand-Android.apk' },
+  android: { label: 'Android detected', title: 'GuideEye for Android', detail: 'The full phone assistant with camera, voice, and haptic guidance.', button: 'Download APK · 12.9 MB', href: release + 'GuideBand-Android.apk' },
   macos: { label: 'macOS detected', title: 'GuideEye for your Mac', detail: 'One universal build for Apple silicon and Intel Macs.', button: 'Download universal DMG', href: release + 'GuideBand-0.1.0-universal.dmg' },
   windows: { label: 'Windows detected', title: 'GuideEye for Windows', detail: 'The guided x64 installer for Windows 10 and later.', button: 'Download Windows installer', href: release + 'GuideBand.Setup.0.1.0.exe' },
   linux: { label: 'Linux detected', title: 'GuideEye for Linux', detail: 'DEB for Debian and Ubuntu. AppImage is available below.', button: 'Download DEB · x64', href: release + 'guideband_0.1.0_amd64.deb' },

@@ -329,17 +329,12 @@
         <span>GuideEye</span>
       </a>
 
-      <!-- Vexo Band BLE Widget -->
+      <!-- Service status: GuideEye uses the phone or computer microphone. -->
       <div class="band-widget" id="bandWidget">
         <div class="band-indicator" id="bandIndicator">
-          <span class="dot" id="bandDot"></span>
-          <span id="bandName">Vexo-HACK-20</span>
-          <span id="bandBattery">95% (BLE)</span>
+          <span class="dot dot-searching" id="serviceDot"></span>
+          <span id="serviceStatus">Checking service…</span>
         </div>
-        <button class="band-btn" id="bandListenBtn" type="button" title="Capture audio directly from wristband">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/><path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>
-          <span id="bandBtnText">Listen on Band</span>
-        </button>
       </div>
       <nav class="app-nav" aria-label="Application sections">
         <button id="homeTab" class="active" type="button">Assistant</button>
@@ -352,7 +347,7 @@
       <section class="hero-card glass" aria-labelledby="greeting">
         <p class="pill glass" id="clockPill"><span class="dot"></span>SATURDAY · 12:00 PM</p>
         <h1 id="greeting">Good afternoon.<br><span class="accent">Where are we going?</span></h1>
-        <p class="lede">Speak naturally into your Vexo band or press the orb below. GuideEye verifies every action aloud.</p>
+        <p class="lede">Speak naturally through your phone or computer microphone. GuideEye verifies every action aloud.</p>
 
         <button class="talk-orb" id="talkOrb" type="button" aria-label="Hold to talk or tap to listen">
           <svg viewBox="0 0 24 24" fill="currentColor">
@@ -364,7 +359,7 @@
 
         <div class="dialogue-box glass" id="dialogueBox">
           <p class="dialogue-heard" id="heardText">Try: “Help me walk to Safeway” or “What’s in front of me?”</p>
-          <p class="dialogue-reply" id="replyText">I am ready. Your wristband #20 is connected over Bluetooth Low Energy.</p>
+          <p class="dialogue-reply" id="replyText">I am ready. Tap the microphone or choose an action to begin.</p>
         </div>
       </section>
 
@@ -431,16 +426,15 @@
     </main>
     <section id="settingsPanel" class="settings-panel glass" hidden aria-labelledby="settingsTitle">
       <p class="sheet-eyebrow" style="color:var(--accent); font-weight:700; margin:0 0 0.25rem;">SETTINGS</p>
-      <h2 id="settingsTitle" style="margin:0;">Band connection</h2>
-      <p style="color:var(--muted);">A Vexo band may not appear in macOS Bluetooth Settings. Use this check after double-tapping the band.</p>
-      <div class="connection-row">
-        <div>
-          <div class="connection-state"><span class="dot dot-searching" id="settingsBandDot"></span><span id="settingsBandState">Not checked</span></div>
-          <p class="connection-details" id="settingsBandDetails">Press Check connection to query the band.</p>
-        </div>
-        <button class="btn btn-primary btn-small" id="refreshBandBtn" type="button">Check connection</button>
-      </div>
-      <p class="connection-details">If it is not found: wake the band with a double-tap, keep it near the Mac, then check again.</p>
+      <h2 id="settingsTitle" style="margin:0;">Service connection</h2>
+      <p style="color:var(--muted);">GuideEye needs its service for AI assistance, navigation, vision, and cloud voice. When this page is served by GuideEye, leave this blank.</p>
+      <form id="apiForm" class="connection-row">
+        <label style="flex:1;">Service address
+          <input id="apiInput" type="url" inputmode="url" placeholder="https://your-guideeye-service.example" autocomplete="off" style="width:100%; margin-top:0.35rem;">
+        </label>
+        <button class="btn btn-primary btn-small" type="submit">Connect</button>
+      </form>
+      <p class="connection-details" id="serviceDetails">Use the same secure address that serves the GuideEye API. The microphone and camera stay on this device.</p>
     </section>
   </div>
 

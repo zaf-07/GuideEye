@@ -2,6 +2,7 @@ services:
   - type: web
     name: guideeye
     runtime: docker
+    region: oregon
     plan: free
     dockerfilePath: ./Dockerfile
     healthCheckPath: /health
@@ -9,9 +10,15 @@ services:
     envVars:
       - key: BAND_AUTOCONNECT
         value: "false"
-      - key: CORS_ORIGINS
-        value: https://zaf-07.github.io
-      - key: GROQ_API_KEY
+      - key: SPEECH_VOICE
+        value: elevenlabs
+      - key: ELEVENLABS_API_KEY
         sync: false
       - key: HR_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: SUPERMEMORY_API_KEY
         sync: false

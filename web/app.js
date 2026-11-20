@@ -1,8 +1,33 @@
 // GuideEye Modern Desktop Application Controller
 (() => {
   const $ = s => document.querySelector(s);
-  const stored = (() => { try { return localStorage.getItem('guideband_api'); } catch { return null; } })();
-  const API = (stored ?? (location.port === '8000' ? '' : 'http://localhost:8000')).replace(/\/$/, '');
+  const store = { get: key => { try { return localStorage.getItem(key); } catch { return null; } }, set: (key, value) => { try { localStorage.setItem(key, value); } catch {} } };
+  const requestedApi = new URLSearchParams(location.search).get('api');
+  let API = (requestedApi ?? store.get('guideband_api') ?? '').replace(/\/$/, '');
+
+  function showService(online, detail) {
+    const dot = $('#serviceDot');
+    const status = $('#serviceStatus');
+    const details = $('#serviceDetails');
+    if (dot) dot.className = online ? 'dot' : 'dot dot-bad';
+    if (status) status.textContent = online ? 'GuideEye connected' : 'Service unavailable';
+    if (details) details.textContent = detail;
+  }
+
+  async function checkService() {
+    try {
+      const response = await fetch(`${API}/system/status`, { cache: 'no-store' });
+      if (!response.ok) throw new Error(`Service returned ${response.status}`);
+      const status = await response.json();
+      const voice = status.speech?.voice && status.speech.voice !== 'browser' ? `${status.speech.voice} voice` : 'device voice';
+      showService(true, `Connected · ${voice} · ${status.errands?.agent === 'harnessrouter' ? 'HarnessRouter actions ready' : 'assistant ready'}.`);
+      return true;
+    } catch {
+      const address = API || location.origin;
+      showService(false, `Could not reach ${address}. Open GuideEye through its service, or enter the deployed API address above.`);
+      return false;
+    }
+  }
 
   // --- Clock ---
   function updateClock() {
@@ -89,8 +114,8 @@
       if (dot) dot.className = 'dot dot-searching';
     }
   }
-  pollWearableStatus();
-  setInterval(pollWearableStatus, 4000);
+  checkService();
+  setInterval(checkService, 15000);
 
   function showSection(settings) {
     $('#main').hidden = settings;
@@ -100,26 +125,15 @@
   }
   $('#homeTab')?.addEventListener('click', () => showSection(false));
   $('#settingsTab')?.addEventListener('click', () => showSection(true));
-  $('#refreshBandBtn')?.addEventListener('click', async event => {
-    const button = event.currentTarget;
-    button.disabled = true;
-    button.textContent = 'Checking…';
-    try {
-      const response = await fetch(`${API}/wearable/refresh`, { method: 'POST' });
-      const data = await response.json();
-      updateSettingsBand(data);
-      bandConnected = Boolean(data.connected);
-      $('#replyText').textContent = data.connected
-        ? 'The band is connected and ready.'
-        : 'The band was not found. Double-tap it and check again.';
-    } catch (error) {
-      $('#settingsBandState').textContent = 'Connection check failed';
-      $('#settingsBandDetails').textContent = error.message;
-    } finally {
-      button.disabled = false;
-      button.textContent = 'Check connection';
-    }
+  $('#apiForm')?.addEventListener('submit', async event => {
+    event.preventDefault();
+    const input = $('#apiInput');
+    const value = input.value.trim().replace(/\/$/, '');
+    API = value === location.origin ? '' : value;
+    store.set('guideband_api', API);
+    await checkService();
   });
+  if ($('#apiInput')) $('#apiInput').value = API || location.origin;
 
   // --- Camera Frame Snapshot Helper ---
   async function getCameraFrameBlob() {
@@ -197,19 +211,10 @@
     }
   }
 
-  const bandBtn = $('#bandListenBtn');
-  if (bandBtn) bandBtn.onclick = () => listenThroughBand(7);
-
-  // --- Talk Orb: Band BLE or Browser Mic fallback ---
+  // --- Talk Orb: browser microphone ---
   const orb = $('#talkOrb');
   if (orb) {
-    orb.onclick = () => {
-      if (bandConnected || !SpeechRec) {
-        listenThroughBand(7);
-      } else {
-        browserListen();
-      }
-    };
+    orb.onclick = () => browserListen();
   }
 
   // --- Browser Speech Recognition Fallback ---
