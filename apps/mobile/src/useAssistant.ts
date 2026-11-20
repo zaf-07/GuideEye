@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { askAssistant, reportLocation, routeSnapshot, type AssistantReply, type Coordinates, type RouteSnapshot } from './assistant';
 import { announce } from './lib/announce';
 import { useProfile } from './state/ProfileContext';
-import { captureFrame, hasFrameSource, needsCamera, setAssistantBusy, waitForFrameSource } from './voice/frame';
+import { captureFrame, hasFrameSource, needsCamera, seenObjects, setAssistantBusy, waitForFrameSource } from './voice/frame';
 import { actsWithoutAsking } from './voice/permission';
 
 const ROUTE_UPDATE_METERS = 8;
@@ -83,7 +83,8 @@ export function useAssistant() {
       setError('');
       try {
         const [location, frame] = await Promise.all([currentCoordinates(), frameFor(request, say)]);
-        let next = await askAssistant(request, location, frame);
+        const seen = profileRef.current.localOnlyMemory ? [] : seenObjects();
+        let next = await askAssistant(request, location, frame, seen);
         if (actsWithoutAsking(next, profileRef.current.fullPermission)) {
           // The user gave full permission at setup: answer the "say yes to
           // send" question for them. If that fails, the question is asked as usual.

@@ -12,6 +12,7 @@ import { useProfile } from '../state/ProfileContext';
 import { useAssistant } from '../useAssistant';
 import { HELP_TEXT, extractCommand, localCommand, parseDelay, spokenDelay } from './commands';
 import { holdAttention } from './frame';
+import { expectsAnswer } from './permission';
 
 type Assistant = ReturnType<typeof useAssistant>;
 
@@ -33,6 +34,8 @@ const RESTART_MS = 350;
 const RETRY_MS = 1500;
 const SLOW_RETRY_MS = 10000;
 const FOLLOW_UP_MS = 12000;
+// Long enough for a spoken question to finish and be answered.
+const ANSWER_WINDOW_MS = 25000;
 const WAKE_DEBOUNCE_MS = 550;
 const BARE_WAKE = /^\s*(?:hey[\s,]+|okay[\s,]+|ok[\s,]+|hi[\s,]+)?(?:guide\s*eye|guide)\s*[,.!?]*\s*$/i;
 const GREETING = 'GuideEye is listening. Say Guide when you need me.';
@@ -67,6 +70,14 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
   profileRef.current = profile;
   const assistantRef = useRef(assistant);
   assistantRef.current = assistant;
+  // When the assistant asks for a detail ("What should Lee's new name be?"),
+  // the answer does not need the wake word.
+  const lastReply = assistant.reply;
+  useEffect(() => {
+    if (!expectsAnswer(lastReply)) return;
+    followUpUntil.current = Date.now() + ANSWER_WINDOW_MS;
+    holdAttention(ANSWER_WINDOW_MS);
+  }, [lastReply]);
   const pathnameRef = useRef(pathname);
   pathnameRef.current = pathname;
 

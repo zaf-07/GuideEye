@@ -10,9 +10,11 @@ first read back and held until the user answers yes.
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 import time
+from collections import deque
 from urllib.parse import quote
 
 from . import checkout, errand, messaging, navigation, vision
@@ -82,6 +84,8 @@ PAY = re.compile(r'\b(buy|order|purchase|pay for|get me)\b')
 SCAN_PAY = re.compile(r'\b(pay|scan|buy)\b.*\b(this|that|it|code|qr|bill|total)\b|\bscan (and|to) pay\b|^\W*pay\W*$')
 RECALL = re.compile(
     r'\bwhere (did|have)\b|\bwhere (is|are|was|were) (?:my|the|a|an)\b|\bwhat did\b|\b(did|have) you seen?\b'
+    r'|\bwhat (?:was|were) (?:around|near|next to|beside|there)\b|\bwhat have you (?:seen|scanned|detected|noticed)\b'
+    r'|\bwhat (?:objects|things) (?:did|have) you\b|\bwhen did (?:you|i) (?:last )?see\b|\bwhat else was\b'
     r'|\bdo you remember\b|\blast (saw|seen)\b|\bwhat (do|did) you remember\b'
     r'|\bwhere (was|have) i\b|\bwhere did i go\b|\bwhat (did|have) i (ask|asked|say|said)\b'
 )
@@ -192,7 +196,8 @@ GREETING = re.compile(r'^\W*(hi|hello|hey|good (morning|afternoon|evening)|howdy
 
 HELP_TEXT = (
     'I can tell you what is in front of you, read text, remember where things are, tell you where you are, '
-    'guide you on foot to a place nearby, message your family, pay after you say yes, '
+    'recall what I saw earlier and what was around it, guide you on foot to a place nearby, message your family, '
+    'rename or remove a contact, pay after you say yes, '
     'and run errands such as reading a letter and telling you what it asks for. '
     'Try: what is in front of me?'
 )
@@ -220,6 +225,124 @@ def spoken_phone(text: str) -> str:
     return best if len(best) >= 7 else ''
 
 
+# ----- changing saved contacts by voice -----
+_ASK_LEAD = re.compile(
+    r"^\W*(?:(?:hey|hi|ok|okay|please|guide|guideeye)[\s,]+)*"
+    r"(?:(?:can|could|would|will) you (?:please )?|i (?:want|need|would like|wanna)(?: you)? to |i'd like(?: you)? to |please |let's )*",
+    re.IGNORECASE)
+_CONTACTS_LEAD = re.compile(
+    r"^(?:go (?:in)?to|open|check|look (?:in|at)|pull up) (?:my |the )?contacts?(?: list| book)?[\s,]*(?:and (?:then )?|then )?",
+    re.IGNORECASE)
+_NAME_TAIL = re.compile(
+    r"[\s,]+(?:please|thanks|thank you|for me|(?:in|from|on) (?:my |the )?contacts?(?: list| book)?)\W*$", re.IGNORECASE)
+_NAME_LEAD = re.compile(r"^(?:(?:my|the|a|one of my) )?(?:contacts?\b ?)?(?:(?:named|called) )?", re.IGNORECASE)
+_CHANGE = r"(?:change|update|edit|fix|correct|set|modify)"
+_NUMBER = r"(?:phone |whatsapp |mobile |cell )?number"
+_S = r"(?:'s|’s)"
+PRONOUN_NAME = re.compile(r"^(?:him|her|them|it|that|that one|that person|that contact|the same (?:one|person|contact))$", re.IGNORECASE)
+PRONOUN = re.compile(r"\b(?:him|her|them|that person|that contact|the same person)\b", re.IGNORECASE)
+CONTACT_LIST = re.compile(
+    r"\b(?:who(?:'s| is| are)|what(?:'s| is| are)|list|read|tell me|show|say|name)\b.*\bmy contacts?\b"
+    r"|\bhow many contacts\b|\bdo i have (?:any )?contacts\b|\bwho (?:do i have|is saved)\b.*\bcontacts?\b", re.IGNORECASE)
+_EDIT_FORMS = [
+    ('number', re.compile(rf"^{_CHANGE} (?:the |my )?{_NUMBER} (?:of|for) (?P<name>.+?)(?: (?:to|as|into|with)\b.*)?$", re.IGNORECASE)),
+    ('number', re.compile(rf"^{_CHANGE} (?P<name>.+?){_S} {_NUMBER}\b.*$", re.IGNORECASE)),
+    ('rename', re.compile(r"^rename (?P<name>.+?) (?:to|as|into) (?P<new>.+)$", re.IGNORECASE)),
+    ('rename', re.compile(
+        rf"^{_CHANGE} (?:the |my )?(?:contact{_S}? )?name (?:of|for|from|on) (?P<name>.+?) (?:to|as|into) (?P<new>.+)$", re.IGNORECASE)),
+    ('rename', re.compile(rf"^{_CHANGE} (?P<name>.+?){_S} (?:contact )?name (?:to|as|into) (?P<new>.+)$", re.IGNORECASE)),
+    ('rename', re.compile(rf"^{_CHANGE} (?:my |the )?contact (?P<name>.+?) (?:to|as|into) (?P<new>.+)$", re.IGNORECASE)),
+    ('rename', re.compile(rf"^{_CHANGE} (?:the |my |his |her |their |its )?(?:contact{_S}? )?name (?:to|as|into) (?P<new>.+)$", re.IGNORECASE)),
+    ('rename', re.compile(r"^rename (?P<name>.+)$", re.IGNORECASE)),
+    ('rename', re.compile(rf"^{_CHANGE} (?:the |my )?(?:contact{_S}? )?name (?:of|for|on) (?P<name>.+)$", re.IGNORECASE)),
+    ('rename', re.compile(rf"^{_CHANGE} (?P<name>.+?){_S} (?:contact )?name$", re.IGNORECASE)),
+    ('remove', re.compile(r"^(?:delete|remove|erase) (?:my |the )?contact (?P<name>.+)$", re.IGNORECASE)),
+    ('remove', re.compile(r"^(?:delete|remove|erase) (?P<name>.+?) from (?:my |the )?contacts?(?: list| book)?$", re.IGNORECASE)),
+    ('rename', re.compile(
+        rf"^{_CHANGE} (?:a |my |the |one of my )?(?:contacts?{_S}?(?: list| names?| details| info| information)?|(?:contact )?name)$",
+        re.IGNORECASE)),
+]
+NO_CONTACTS = 'You have no contacts yet. Say add a contact to save one.'
+CONTACT_EDIT_TTL_SECONDS = 90
+# Requests that end a half-finished contact change instead of being taken as a name.
+LEAVES_CONTACT_EDIT = {'forget', 'timer', 'nav_stop', 'go_back', 'place_set', 'place_go', 'where_am_i', 'navigate',
+                       'scan_pay', 'pay_quote', 'help', 'contact_add', 'contact_edit', 'errand', 'recall', 'bridge'}
+
+
+def _clean_name(value: str) -> str:
+    """A person's name out of a spoken fragment; empty when it is not a plausible name."""
+    value = value.strip(" .,!?'\"")
+    while _NAME_TAIL.search(value):
+        value = _NAME_TAIL.sub('', value)
+    value = _NAME_LEAD.sub('', value).strip(" .,!?'\"-")
+    if not value or len(value) > 40 or len(value.split()) > 4 or not re.fullmatch(r"[A-Za-z][A-Za-z .'’-]*", value):
+        return ''
+    return ' '.join(word[:1].upper() + word[1:] for word in value.split())
+
+
+def spoken_name(text: str) -> str:
+    """The name in an answer to "what should the new name be?": 'Leo', 'call him Leo', 'it should be Leo'."""
+    value = re.sub(
+        r"^\W*(?:(?:please )?(?:call|name|rename|make|change|set) (?:it|him|her|them|that)(?: to| as)?"
+        r"|it should be|it is|it's|(?:the )?new name (?:is|should be)|to|as|just)\s+", '', text.strip(), flags=re.IGNORECASE)
+    return _clean_name(value)
+
+
+def contact_edit(text: str) -> dict | None:
+    """Recognise a request to rename, renumber, remove or list saved contacts.
+
+    Returns {'kind', 'name', 'new_name', 'phone'}; a missing detail is an empty string and is asked for.
+    """
+    value = _ASK_LEAD.sub('', text.strip()).strip()
+    value = _CONTACTS_LEAD.sub('', value).strip(' .,!?')
+    if CONTACT_LIST.search(text) or re.fullmatch(r"(?:(?:my|the) )?contacts?(?: list)?", value, re.IGNORECASE):
+        return {'kind': 'list', 'name': '', 'new_name': '', 'phone': ''}
+    for kind, pattern in _EDIT_FORMS:
+        match = pattern.match(value)
+        if not match:
+            continue
+        found = match.groupdict()
+        raw = (found.get('name') or '').strip()
+        name = raw if PRONOUN_NAME.match(raw) else _clean_name(raw)
+        new_name = _clean_name(found.get('new') or '')
+        if found.get('name') and not name and kind != 'rename':
+            continue
+        if found.get('new') and not new_name:
+            continue
+        if kind == 'rename' and 'name' in found and not name and raw and not re.fullmatch(
+                r"(?:(?:a|my|the|one of my) )?contacts?", raw, re.IGNORECASE):
+            continue
+        if kind == 'rename' and not name and not new_name and 'contact' not in value.lower() and 'name' not in value.lower():
+            continue
+        return {'kind': kind, 'name': name, 'new_name': new_name,
+                'phone': spoken_phone(text) if kind == 'number' else ''}
+    return None
+
+
+UNDERSTAND_PROMPT = (
+    'You work out what a blind or low-vision person wants from GuideEye, a voice assistant, when its fixed rules '
+    'did not recognise the request. Reply with JSON only: {"action": "...", "command": "...", "say": "..."}.\n'
+    'Actions:\n'
+    '- "command": GuideEye can do this. Put the request in "command", rewritten as exactly one of the command '
+    'forms below, filling in names and details from the conversation so far.\n'
+    '- "look": answering needs the live camera view, for example what is ahead, a colour, or whether a door is open.\n'
+    '- "recall": a question about what was seen, noted, said or left somewhere earlier. Put the whole question in '
+    '"command", replacing words like "it", "that" or "there" with what they refer to in the conversation.\n'
+    '- "ask": it is a command, but a detail GuideEye needs is missing or unclear. Put one short question in "say".\n'
+    '- "answer": anything else, such as small talk or a general question. Put one or two short spoken sentences in '
+    '"say". Never describe surroundings, and never say an action was done.\n'
+    'Command forms:\n'
+    'rename contact NAME to NEW NAME | delete contact NAME | list my contacts | change the number for NAME to DIGITS | '
+    'add a contact named NAME number DIGITS | call NAME | tell NAME that MESSAGE | tell NAME where I am | '
+    'take me to PLACE | take me home | stop navigation | where am I | set a timer for N minutes | '
+    'change my home address to ADDRESS | remember that FACT | buy ITEM | open whatsapp | open maps | help\n'
+    'Use only contact names from the saved contacts list. Never invent a name, number, address or amount.'
+)
+CONVERSATION_TURNS = 8
+CONVERSATION_TTL_SECONDS = 15 * 60
+MAX_SESSIONS = 500
+
+
 def contact_name(text: str) -> str:
     """Find an optional name in 'add a contact named Sam' without mistaking command words for a name."""
     match = re.search(r'\b(?:named|name is|for)\s+([a-z][a-z .\'-]{0,39})', text, re.IGNORECASE)
@@ -241,6 +364,8 @@ def route(text: str, has_pending: bool = False, navigating: bool = False) -> str
         return 'forget'
     if CONTACT_ADD.search(value):
         return 'contact_add'
+    if contact_edit(text):
+        return 'contact_edit'
     if TIMER.search(value):
         return 'timer'
     if NAV_STOP.search(value):
@@ -334,6 +459,43 @@ class Assistant:
         self._calls: dict[str, dict] = {}
         self._place_changes: dict[str, dict] = {}
         self._contacts: dict[str, dict] = {}
+        self._contact_edits: dict[str, dict] = {}
+        self._last_contact: dict[str, dict] = {}
+        self._turns: dict[str, deque] = {}
+
+    # ----- the conversation so far -----
+
+    def conversation(self, session: str, limit: int = CONVERSATION_TURNS) -> str:
+        """Recent turns of this session as plain lines, so a follow-up can refer back to them."""
+        turns = self._turns.get(session)
+        if not turns:
+            return ''
+        if time.time() - turns[-1][0] > CONVERSATION_TTL_SECONDS:
+            del self._turns[session]
+            return ''
+        return '\n'.join(f'User: {said}\nGuideEye: {answer}' for _, said, answer in list(turns)[-limit:])
+
+    def _note_turn(self, session: str, text: str, reply: dict) -> None:
+        if session not in self._turns and len(self._turns) >= MAX_SESSIONS:
+            del self._turns[min(self._turns, key=lambda key: self._turns[key][-1][0])]
+        turns = self._turns.setdefault(session, deque(maxlen=CONVERSATION_TURNS))
+        if turns and time.time() - turns[-1][0] > CONVERSATION_TTL_SECONDS:
+            turns.clear()
+        turns.append((time.time(), text.strip()[:300], str(reply.get('say') or '')[:300]))
+
+    def forget_conversation(self, session: str | None = None) -> None:
+        for store in (self._turns, self._last_contact):
+            store.clear() if session is None else store.pop(session, None)
+
+    async def respond(self, session: str, text: str, image: bytes | None = None, mime: str = 'image/jpeg',
+                      location: tuple[float, float] | None = None, detections: list[dict] | None = None) -> dict:
+        """Answer one request and keep it in the conversation. `detections` are objects the phone's own
+        detector currently sees; they go into the scan history."""
+        if detections:
+            self.memory.record_detections(detections)
+        reply = await self._respond(session, text, image, mime, location)
+        self._note_turn(session, text, reply)
+        return reply
 
     def pending_message(self, session: str) -> dict | None:
         message = self._messages.get(session)
@@ -342,8 +504,8 @@ class Assistant:
             return None
         return message
 
-    async def respond(self, session: str, text: str, image: bytes | None = None, mime: str = 'image/jpeg',
-                      location: tuple[float, float] | None = None) -> dict:
+    async def _respond(self, session: str, text: str, image: bytes | None = None, mime: str = 'image/jpeg',
+                       location: tuple[float, float] | None = None, inferred: bool = False) -> dict:
         order = self.orders.pending(session)
         message = self.pending_message(session)
         call = self._calls.get(session)
@@ -371,12 +533,18 @@ class Assistant:
                 intent = 'call_waiting'
         if pending_contact and not order and not message and not call:
             intent = 'contact_continue'
+        edit = self._contact_edits.get(session)
+        if edit and (time.time() > edit['expires'] or intent in LEAVES_CONTACT_EDIT
+                     or (intent == 'see' and CAMERA_REQUEST.search(text.lower()))):
+            edit = self._contact_edits.pop(session, None) and None
+        if edit and not (order or message or call or pending_contact):
+            intent = 'contact_edit_continue'
         if message and not order:
             intent = intent.replace('pay_', 'message_')
         task = self._errands.get(session)
         if task and time.time() > task['expires']:
             task = self._errands.pop(session, None) and None
-        if task and not (order or message or call or pending_contact):
+        if task and not (order or message or call or pending_contact or edit):
             if not task['done'] and (intent in ('errand', 'nothing_pending') or ERRAND_STATUS.search(text.lower())):
                 intent = 'errand_status'
             elif task['done'] and task['asks'] and intent == 'nothing_pending':
@@ -384,7 +552,8 @@ class Assistant:
         reply = {'intent': intent, 'heard': text, 'say': '', 'order': None, 'confirm': None, 'open_url': None,
                  'map_url': None, 'timer': None, 'errand': None,
                  'warnings': [], 'detections': [], 'provider': None}
-        if not intent.endswith(('_confirm', '_cancel', '_waiting')) and intent not in ('forget', 'nothing_pending', 'recall'):
+        if (not inferred and not intent.endswith(('_confirm', '_cancel', '_waiting', '_continue'))
+                and intent not in ('forget', 'nothing_pending', 'recall')):
             self.memory.add_note('asked', f'I asked: "{text}"')
 
         if intent == 'pay_quote':
@@ -434,15 +603,20 @@ class Assistant:
             self._start_contact(reply, session, text)
         elif intent == 'contact_continue':
             self._continue_contact(reply, session, pending_contact, text)
+        elif intent == 'contact_edit':
+            self._edit_contact(reply, session, contact_edit(text), inferred)
+        elif intent == 'contact_edit_continue':
+            self._continue_contact_edit(reply, session, edit, text)
         elif intent == 'open_app':
             self._open_app(reply, text)
         elif intent == 'nothing_pending':
             reply['say'] = 'There is nothing waiting for your answer.'
         elif intent == 'forget':
             self.memory.clear()
+            self.forget_conversation()
             reply['say'] = 'Done. I have erased everything I remembered.'
         elif intent == 'recall':
-            answer = await self.memory.recall(text)
+            answer = await self.memory.recall(text, self.conversation(session))
             reply.update(say=answer['text'], provider=answer['provider'])
         elif intent == 'remember' and image is None:
             note_text = remembered_text(text)
@@ -495,22 +669,76 @@ class Assistant:
             place = await self.place_name(*location) if location else ''
             self.memory.add_note('note', fact[0].upper() + fact[1:], place=place)
             reply['say'] = f'I will remember that: {fact}.'
-        elif image is None:
-            if intent == 'see' and not CAMERA_REQUEST.search(text.lower()):
-                await self._chat(reply, text)
-            else:
-                reply['say'] = 'I need the camera for that. Please turn the camera on.'
         else:
-            place = await self.place_name(*location) if location else ''
-            await self._look(reply, intent, text, image, mime, place)
+            if intent == 'see' and not inferred and not CAMERA_REQUEST.search(text.lower()):
+                # No rule matched and it is not plainly about the camera: work out what was meant
+                # before sending the frame to the vision model.
+                understood = await self._act_on_meaning(reply, session, text, image, mime, location)
+                if understood is not None:
+                    return understood
+            if image is None:
+                if intent == 'see' and not CAMERA_REQUEST.search(text.lower()):
+                    await self._chat(reply, text, self.conversation(session))
+                else:
+                    reply['say'] = 'I need the camera for that. Please turn the camera on.'
+            else:
+                place = await self.place_name(*location) if location else ''
+                await self._look(reply, intent, text, image, mime, place, self.conversation(session, 3))
         return reply
 
-    async def _chat(self, reply: dict, text: str) -> None:
+    async def _understand(self, session: str, text: str) -> dict | None:
+        """Ask the language model what an unrecognised request means. None when it cannot say."""
+        from . import llm
+        if not llm.configured():
+            return None
+        names = ', '.join(contact['name'] for contact in self.memory.contacts()) or 'none'
+        conversation = self.conversation(session)
+        prompt = f'Saved contacts: {names}.\n'
+        if conversation:
+            prompt += f'Conversation so far:\n{conversation}\n\n'
+        prompt += f'The person now says: {text}'
+        try:
+            raw = await llm.complete([{'text': prompt}], system=UNDERSTAND_PROMPT, json_mode=True, timeout=6.0)
+            meaning = json.loads(raw[raw.index('{'):raw.rindex('}') + 1])
+        except Exception:
+            return None
+        return meaning if isinstance(meaning, dict) and isinstance(meaning.get('action'), str) else None
+
+    async def _act_on_meaning(self, reply: dict, session: str, text: str, image: bytes | None, mime: str,
+                              location: tuple[float, float] | None) -> dict | None:
+        """Carry out what the language model made of a request. None leaves it to the camera or chat path.
+
+        The model only rewrites the request into a command; that command still goes through `route`
+        and the same yes-or-no gates as anything the user says directly.
+        """
+        meaning = await self._understand(session, text)
+        if not meaning:
+            return None
+        action = meaning['action'].strip().lower()
+        command = str(meaning.get('command') or '').strip()[:200]
+        say = str(meaning.get('say') or '').strip()[:400]
+        if action == 'command' and command:
+            if route(command) in ('see', 'nothing_pending', 'forget', 'greeting'):
+                return None
+            result = await self._respond(session, command, image, mime, location, inferred=True)
+            result.update(heard=text, understood=command, inferred=True)
+            return result
+        if action == 'recall':
+            answer = await self.memory.recall(command or text, self.conversation(session))
+            reply.update(intent='recall', say=answer['text'], provider=answer['provider'])
+            return reply
+        if action in ('ask', 'answer') and say:
+            reply.update(intent='clarify' if action == 'ask' else 'chat', say=say, provider='llm')
+            return reply
+        return None
+
+    async def _chat(self, reply: dict, text: str, conversation: str = '') -> None:
         """A request no rule matched and that is not about the camera: answer it, or say it was not understood."""
         from . import llm
         if llm.configured():
             try:
-                answer = (await llm.complete([{'text': text}], system=CHAT_PROMPT)).strip()
+                asked = f'Conversation so far:\n{conversation}\n\nThe person now says: {text}' if conversation else text
+                answer = (await llm.complete([{'text': asked}], system=CHAT_PROMPT)).strip()
                 if answer:
                     reply.update(intent='chat', say=answer[:400], provider='llm')
                     return
@@ -607,6 +835,7 @@ class Assistant:
                 pending['phone'] = ''
             else:
                 self._contacts.pop(session, None)
+                self._last_contact[session] = contact
                 reply['intent'] = 'contact_saved'
                 reply['contact'] = contact
                 reply['say'] = f"Saved {contact['name']} as a WhatsApp contact."
@@ -616,6 +845,147 @@ class Assistant:
             reply['say'] = f"What is {pending['name']}'s WhatsApp number, including the country code?"
         else:
             reply['say'] = 'Who should I add? Say their name, then their WhatsApp number with the country code.'
+
+    # ----- changing saved contacts -----
+
+    def _contact_names(self) -> str:
+        names = [contact['name'] for contact in self.memory.contacts()]
+        if len(names) < 2:
+            return ''.join(names)
+        return ', '.join(names[:-1]) + ' and ' + names[-1]
+
+    def _named_contact(self, session: str, name: str) -> dict | None:
+        """The saved contact a spoken name means; "him", "her" or "that one" is the contact last talked about."""
+        if not name:
+            return None
+        if PRONOUN_NAME.match(name.strip()):
+            last = self._last_contact.get(session)
+            return self.memory.find_contact(last['name']) if last else None
+        return self.memory.find_contact(name)
+
+    def _edit_contact(self, reply: dict, session: str, edit: dict, inferred: bool = False) -> None:
+        known = self._contact_names()
+        if edit['kind'] == 'list':
+            count = len(self.memory.contacts())
+            reply['intent'] = 'contact_list'
+            reply['say'] = f'You have {count} contact{"s" if count != 1 else ""}: {known}.' if known else NO_CONTACTS
+            return
+        if not known:
+            reply.update(intent='contact_missing', say=NO_CONTACTS)
+            return
+        contact = self._named_contact(session, edit['name'])
+        if contact is None and not edit['name'] and edit['kind'] == 'rename' and edit['new_name']:
+            contact = self._named_contact(session, 'that one')  # "change the name to Leo", right after talking about Lee
+        pending = {'kind': edit['kind'], 'contact': contact, 'new_name': edit['new_name'], 'phone': edit['phone'],
+                   'ask_first': inferred or edit['kind'] == 'remove', 'agreed': False, 'misses': 0,
+                   'expires': time.time() + CONTACT_EDIT_TTL_SECONDS}
+        self._contact_edits[session] = pending
+        if contact is None and edit['name'] and not PRONOUN_NAME.match(edit['name']):
+            reply['intent'] = 'contact_edit_waiting'
+            if edit['kind'] == 'rename' and not edit['new_name']:
+                # "Change the name for Lee" with no contact called Lee: Lee is the name they want to give.
+                pending['new_name'] = edit['name']
+                reply['say'] = (f'I do not have a contact called {edit["name"]}. '
+                                f'Which contact should I rename to {edit["name"]}? You have {known}.')
+            else:
+                reply['say'] = f'I do not have {edit["name"]} in your contacts. You have {known}. Which one do you mean?'
+            return
+        self._advance_contact_edit(reply, session)
+
+    def _advance_contact_edit(self, reply: dict, session: str) -> None:
+        """Do the change if everything is known; otherwise ask for the next missing detail."""
+        pending = self._contact_edits[session]
+        contact, kind = pending['contact'], pending['kind']
+        reply['intent'] = 'contact_edit_waiting'
+        if contact is None:
+            verb = {'rename': 'rename', 'remove': 'remove', 'number': 'update'}[kind]
+            reply['say'] = f'Which contact do you want to {verb}? You have {self._contact_names()}.'
+            return
+        name = contact['name']
+        if kind == 'rename':
+            new_name = pending['new_name']
+            if not new_name:
+                reply['say'] = f"What should {name}'s new name be?"
+                return
+            if new_name.lower() == name.lower():
+                self._contact_edits.pop(session, None)
+                reply.update(intent='contact_renamed', contact=contact, say=f'{name} is already saved under that name.')
+                return
+            if pending['ask_first'] and not pending['agreed']:
+                reply['confirm'] = f'Rename {name} to {new_name}?'
+                reply['say'] = f'Rename {name} to {new_name}? Say yes or no.'
+                return
+            try:
+                saved = self.memory.rename_contact(name, new_name)
+            except ValueError as error:
+                if 'already' in str(error):
+                    pending['new_name'] = ''
+                    reply['say'] = f'You already have a contact called {new_name}. What other name should I use for {name}?'
+                    return
+                self._contact_edits.pop(session, None)
+                reply.update(intent='contact_missing', say=f'I could not find {name} in your contacts any more.')
+                return
+            self._contact_edits.pop(session, None)
+            self._last_contact[session] = saved
+            reply.update(intent='contact_renamed', contact=saved, say=f'Done. {name} is now saved as {saved["name"]}.')
+        elif kind == 'number':
+            if pending['ask_first'] and pending['phone'] and not pending['agreed']:
+                reply['confirm'] = f"Change {name}'s number?"
+                reply['say'] = f"Change {name}'s number to {' '.join(pending['phone'])}? Say yes or no."
+                return
+            try:
+                saved = self.memory.add_contact(name, pending['phone'])
+            except ValueError:
+                pending['phone'] = ''
+                reply['say'] = f"What is {name}'s new WhatsApp number, including the country code?"
+                return
+            self._contact_edits.pop(session, None)
+            self._last_contact[session] = saved
+            reply.update(intent='contact_updated', contact=saved, say=f"Done. I updated {name}'s number.")
+        else:
+            if not pending['agreed']:
+                reply['confirm'] = f'Remove {name} from your contacts?'
+                reply['say'] = f'Remove {name} from your contacts? Say yes or no.'
+                return
+            self.memory.remove_contact(name)
+            self._contact_edits.pop(session, None)
+            self._last_contact.pop(session, None)
+            reply.update(intent='contact_removed', say=f'Done. I removed {name} from your contacts.')
+
+    def _continue_contact_edit(self, reply: dict, session: str, pending: dict, text: str) -> None:
+        value = text.lower()
+        contact, kind = pending['contact'], pending['kind']
+        if NO.search(value):
+            self._contact_edits.pop(session, None)
+            reply.update(intent='contact_edit_cancel', say='Okay. I left your contacts as they are.')
+            return
+        pending['expires'] = time.time() + CONTACT_EDIT_TTL_SECONDS
+        ready = contact and (kind == 'remove' or (kind == 'rename' and pending['new_name'])
+                             or (kind == 'number' and pending['phone']))
+        if ready and pending['ask_first'] and not pending['agreed']:
+            pending['agreed'] = bool(YES.search(value))
+        elif contact is None:
+            found = self._named_contact(session, text)
+            if found is None:
+                pending['misses'] += 1
+                if pending['misses'] >= 2:
+                    self._contact_edits.pop(session, None)
+                    reply.update(intent='contact_edit_cancel',
+                                 say=f'I still did not find that contact, so I changed nothing. You have {self._contact_names()}.')
+                else:
+                    reply.update(intent='contact_edit_waiting',
+                                 say=f'I did not find that contact. You have {self._contact_names()}. Which one?')
+                return
+            pending['contact'] = found
+        elif kind == 'rename':
+            new_name = spoken_name(text)
+            if not new_name:
+                reply.update(intent='contact_edit_waiting', say=f"I did not catch the name. What should {contact['name']}'s new name be?")
+                return
+            pending['new_name'] = new_name
+        elif kind == 'number':
+            pending['phone'] = spoken_phone(text)
+        self._advance_contact_edit(reply, session)
 
     async def _scan_pay(self, reply: dict, session: str, image: bytes | None, mime: str) -> None:
         if image is None:
@@ -638,6 +1008,10 @@ class Assistant:
 
     async def _compose_message(self, reply: dict, session: str, text: str, location: tuple[float, float] | None) -> None:
         contact = self.memory.find_contact(text)
+        if contact is None and PRONOUN.search(text):
+            contact = self._named_contact(session, 'that one')  # "text her that I am late"
+        if contact is not None:
+            self._last_contact[session] = contact
         if contact is None:
             names = [item['name'] for item in self.memory.contacts()]
             known = ' Your contacts are ' + ', '.join(names) + '.' if names else ' You have no contacts yet: add them in the Family tab.'
@@ -662,11 +1036,11 @@ class Assistant:
     async def _prepare_call(self, reply: dict, session: str, text: str) -> None:
         match = CALL.search(text)
         name = match.group(1).strip() if match else ''
-        contact = self.memory.find_contact(name)
+        contact = self._named_contact(session, name)
         if contact is None:
             reply['say'] = f'I do not have {name or "that person"} in your contacts. Add them in the Family tab first.'
             return
-        self._calls[session] = contact
+        self._calls[session] = self._last_contact[session] = contact
         reply['confirm'] = f'Call {contact["name"]}?'
         reply['say'] = f'I found {contact["name"]}. Say yes to call, or no to cancel.'
 
@@ -903,10 +1277,11 @@ class Assistant:
         except navigation.NavigationError as error:
             return str(error)
 
-    async def _look(self, reply: dict, intent: str, text: str, image: bytes, mime: str, place: str = '') -> None:
+    async def _look(self, reply: dict, intent: str, text: str, image: bytes, mime: str, place: str = '',
+                    conversation: str = '') -> None:
         import asyncio
         detections = await asyncio.to_thread(self.detector.detect, image)
-        self.memory.record_detections(detections)
+        self.memory.record_detections(detections, place=place)
         reply['detections'] = detections
         reply['warnings'] = vision.hazard_warnings(detections)
         if intent == 'remember':
@@ -923,7 +1298,11 @@ class Assistant:
             # hints, and keep the picture large enough for small print.
             answer = await vision.describe(image, mime, READ_QUESTION, [], max_side=vision.MAX_FRAME_SIDE)
         else:
-            answer = await vision.describe(image, mime, text, detections)
+            question = text
+            if conversation:
+                # A follow-up such as "what colour is it?" only makes sense with what was just said.
+                question = f'{text}\n\nFor context only, the conversation so far:\n{conversation}\nAnswer only the latest request.'
+            answer = await vision.describe(image, mime, question, detections)
         reply.update(say=answer['text'], provider=answer['provider'])
         if answer['provider'] != 'local':
             self.memory.add_note('seen', f'Answer to "{text}": {answer["text"]}', place=place)

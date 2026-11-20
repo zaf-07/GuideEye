@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import difflib
+import json
 import logging
 import os
 import re
@@ -38,7 +39,20 @@ RECALL_PROMPT = (
     'Use whatever the notes say about the thing: what it was near, which side it was on, the street, and how long ago. '
     'An approximate answer from the notes is better than none. '
     'Notes that start with "I asked" are earlier requests made by the user: for questions about what they asked or said, list those. '
+    'Lines that start with "camera scan" list objects the camera saw together at one moment: use them to say '
+    'what was around a thing, what else was there, and where and when it was seen. '
+    'If a conversation is included, use it to work out what "it", "that" or "there" refers to. '
     'Only if the notes say nothing at all about it, say you have not seen it yet. Never invent details.'
+)
+# Scan history: what the detector saw together, moment by moment.
+SCAN_MERGE_SECONDS = 10
+SCAN_REPEAT_SECONDS = 120
+SCAN_LIMIT = 400
+SCAN_ITEMS = 12
+SURROUNDINGS = re.compile(r'\b(around|near|nearby|next to|beside|close to|surround\w*|what else|along with|together with)\b')
+SEEN_SUMMARY = re.compile(
+    r'\bwhat (?:have|did) you (?:see|seen|scan|scanned|detect|detected|notice|noticed)\b'
+    r'|\bwhat (?:objects|things|stuff)\b|\bwhat was (?:there|here)\b|\bscan(?:ning)? history\b'
 )
 SNAPSHOT_PROMPT = (
     'Describe this scene for a personal memory log in at most three short sentences. '
@@ -86,6 +100,8 @@ class Memory:
             self._db.execute('CREATE TABLE IF NOT EXISTS path (id INTEGER PRIMARY KEY, lat REAL, lon REAL, t REAL)')
             self._db.execute('CREATE TABLE IF NOT EXISTS contacts (key TEXT PRIMARY KEY, name TEXT, phone TEXT)')
             self._db.execute('CREATE TABLE IF NOT EXISTS places (name TEXT PRIMARY KEY, label TEXT, lat REAL, lon REAL)')
+            # Scan history: each row is what the detector saw together over a few seconds.
+            self._db.execute('CREATE TABLE IF NOT EXISTS scans (id INTEGER PRIMARY KEY, t REAL, until REAL, place TEXT, items TEXT)')
             # The relationship graph: what was near, on or inside what.
             self._db.execute(
                 'CREATE TABLE IF NOT EXISTS entities ('
@@ -107,13 +123,24 @@ class Memory:
 
     # ----- writing -----
 
-    def record_detections(self, detections: list[dict], now: float | None = None) -> None:
-        """Keep the latest position of each kind of object the detector has seen."""
+    def record_detections(self, detections: list[dict], now: float | None = None, place: str = '') -> None:
+        """Keep the latest position of each kind of object, and log the scan so it can be recalled later."""
         now = now or time.time()
         latest: dict[str, dict] = {}
         for item in detections:  # one row per label: keep the largest instance
-            if item['label'] not in latest or item['area'] > latest[item['label']]['area']:
-                latest[item['label']] = item
+            label = str(item.get('label') or '').strip()[:40]
+            if not label:
+                continue
+            area = item.get('area') or 0
+            if label not in latest or area > latest[label]['area']:
+                distance = item.get('distance_m')
+                latest[label] = {
+                    'label': label, 'position': str(item.get('position') or '').strip()[:40], 'area': area,
+                    'distance': round(float(distance), 1) if isinstance(distance, (int, float)) and 0 < distance < 50 else None,
+                }
+        if not latest:
+            return
+        seen = sorted([item['label'], item['position'], item['distance']] for item in latest.values())[:SCAN_ITEMS]
         with self._lock, self._db:
             for label, item in latest.items():
                 self._db.execute(
@@ -121,6 +148,22 @@ class Memory:
                     'position = excluded.position, last_seen = excluded.last_seen, times = times + 1',
                     (label, item['position'], now),
                 )
+            place = place or self.last_place
+            last = self._db.execute('SELECT id, t, until, place, items FROM scans ORDER BY id DESC LIMIT 1').fetchone()
+            if last and (not place or not last[3] or place == last[3]):
+                previous = {row[0]: row for row in json.loads(last[4])}
+                # Frames a moment apart, or an unbroken view with nothing new in it, are the same
+                # scan: the detector flickers, and a row per frame would bury the history.
+                unchanged = now - last[2] <= SCAN_REPEAT_SECONDS and all(row[0] in previous for row in seen)
+                if now - last[1] <= SCAN_MERGE_SECONDS or unchanged:
+                    previous.update({row[0]: row for row in seen})
+                    merged = sorted(previous.values(), key=lambda row: row[0])[:SCAN_ITEMS]
+                    self._db.execute('UPDATE scans SET until = ?, place = ?, items = ? WHERE id = ?',
+                                     (now, place or last[3], json.dumps(merged), last[0]))
+                    return
+            self._db.execute('INSERT INTO scans (t, until, place, items) VALUES (?, ?, ?, ?)',
+                             (now, now, place, json.dumps(seen)))
+            self._db.execute('DELETE FROM scans WHERE id <= (SELECT MAX(id) FROM scans) - ?', (SCAN_LIMIT,))
 
     def add_note(self, kind: str, text: str, now: float | None = None, place: str = '') -> dict:
         now = now or time.time()
@@ -328,6 +371,7 @@ class Memory:
     def clear(self) -> None:
         with self._lock, self._db:
             self._db.execute('DELETE FROM sightings')
+            self._db.execute('DELETE FROM scans')
             self._db.execute('DELETE FROM notes')
             self._db.execute('DELETE FROM path')
             self._db.execute('DELETE FROM edges')
@@ -350,6 +394,22 @@ class Memory:
         with self._lock, self._db:
             self._db.execute('INSERT OR REPLACE INTO contacts VALUES (?, ?, ?)', (name.lower(), name, digits))
         return {'name': name, 'phone': digits}
+
+    def rename_contact(self, name: str, new_name: str) -> dict:
+        """Give a saved contact a new name and keep their number."""
+        old_key, new_name = name.strip().lower(), new_name.strip()[:40]
+        if not new_name:
+            raise ValueError('The new name is empty.')
+        with self._lock, self._db:
+            row = self._db.execute('SELECT phone FROM contacts WHERE key = ?', (old_key,)).fetchone()
+            if row is None:
+                raise ValueError('No contact has that name.')
+            if new_name.lower() != old_key and self._db.execute(
+                    'SELECT 1 FROM contacts WHERE key = ?', (new_name.lower(),)).fetchone():
+                raise ValueError('Another contact already has that name.')
+            self._db.execute('DELETE FROM contacts WHERE key = ?', (old_key,))
+            self._db.execute('INSERT INTO contacts VALUES (?, ?, ?)', (new_name.lower(), new_name, row[0]))
+        return {'name': new_name, 'phone': row[0]}
 
     def remove_contact(self, name: str) -> None:
         with self._lock, self._db:
@@ -442,6 +502,33 @@ class Memory:
             rows = self._db.execute('SELECT label, position, last_seen, times FROM sightings ORDER BY last_seen DESC').fetchall()
         return [{'label': r[0], 'position': r[1], 'last_seen': r[2], 'times': r[3]} for r in rows]
 
+    def scans(self, limit: int = 40) -> list[dict]:
+        """The scan history, newest first: what was seen together, when, and where."""
+        with self._lock:
+            rows = self._db.execute('SELECT t, until, place, items FROM scans ORDER BY id DESC LIMIT ?', (limit,)).fetchall()
+        return [{
+            't': r[0], 'until': r[1], 'place': r[2] or '',
+            'items': [{'label': i[0], 'position': i[1], 'distance_m': i[2]} for i in json.loads(r[3])],
+        } for r in rows]
+
+    @staticmethod
+    def _seen(item: dict) -> str:
+        distance = f', about {item["distance_m"]:g} metres away' if item.get('distance_m') else ''
+        return f'a {item["label"]} {item["position"]}'.strip() + distance
+
+    @classmethod
+    def _listed(cls, items: list[dict]) -> str:
+        parts = [cls._seen(item) for item in items]
+        return parts[0] if len(parts) == 1 else ', '.join(parts[:-1]) + ' and ' + parts[-1]
+
+    def scan_lines(self, now: float | None = None, limit: int = 12) -> list[str]:
+        now = now or time.time()
+        return [
+            f'- camera scan, {age(now - scan["until"])}{" near " + scan["place"] if scan["place"] else ""}: '
+            + self._listed(scan['items'])
+            for scan in self.scans(limit)
+        ]
+
     def notes(self, limit: int = 30) -> list[dict]:
         with self._lock:
             rows = self._db.execute('SELECT id, kind, text, created FROM notes ORDER BY id DESC LIMIT ?', (limit,)).fetchall()
@@ -452,6 +539,7 @@ class Memory:
         now = now or time.time()
         notes = [n for n in self.notes(60) if include_requests or n['kind'] != 'asked'][:30]
         lines = [f'- note, {age(now - n["created"])}: {n["text"]}' for n in notes]
+        lines += self.scan_lines(now)
         lines += [f'- detector saw a {s["label"]} {s["position"]}, {age(now - s["last_seen"])}' for s in self.sightings()[:30]]
         return '\n'.join(lines)
 
@@ -468,6 +556,22 @@ class Memory:
             asked = [re.sub(r'^I asked: "(.*)"$', r'\1', note['text']) for note in self.notes() if note['kind'] == 'asked'][:3]
             if asked:
                 return 'You asked: ' + '. Before that: '.join(asked) + '.'
+        scans = self.scans()
+        surroundings = bool(SURROUNDINGS.search(question.lower()))
+        if surroundings or SEEN_SUMMARY.search(question.lower()):
+            # "What was around the chair?" / "What have you seen?": answer from the scan history.
+            for scan in scans:
+                named = [item for item in scan['items'] if words & set(item['label'].lower().split())]
+                others = [item for item in scan['items'] if item not in named]
+                if named and others:
+                    where = f' near {scan["place"]}' if scan['place'] else ''
+                    return (f'{age(now - scan["until"]).capitalize()}{where} I saw {self._listed(named)}, '
+                            f'with {self._listed(others)}.')
+            if scans and not any(words & set(i['label'].lower().split()) for scan in scans for i in scan['items']):
+                parts = [f'{age(now - scan["until"])}{" near " + scan["place"] if scan["place"] else ""}, '
+                         f'{"I saw " if index == 0 else ""}{self._listed(scan["items"])}'
+                         for index, scan in enumerate(scans[:3])]
+                return 'Most recently, ' + '. Before that, '.join(parts) + '.'
         for note in self.notes():
             if note['kind'] == 'asked' and not about_requests:
                 continue
@@ -475,7 +579,16 @@ class Memory:
                 return f'{age(now - note["created"]).capitalize()} I noted: {note["text"]}'
         for sighting in self.sightings():
             if words & set(sighting['label'].split()):
-                return f'I last saw a {sighting["label"]} {sighting["position"]}, {age(now - sighting["last_seen"])}.'
+                answer = f'I last saw a {sighting["label"]} {sighting["position"]}, {age(now - sighting["last_seen"])}'
+                for scan in scans:
+                    if any(item['label'] == sighting['label'] for item in scan['items']):
+                        others = [item for item in scan['items'] if item['label'] != sighting['label']]
+                        if scan['place']:
+                            answer += f', near {scan["place"]}'
+                        if others:
+                            answer += f', with {self._listed(others[:3])}'
+                        break
+                return answer + '.'
         # Nothing matched a note or a sighting: try the relationship graph, which
         # can still place a thing through what it was near.
         with self._lock:
@@ -489,7 +602,7 @@ class Memory:
                             f'{age(now - edge["created"])}.')
         return 'I have not seen that yet.'
 
-    async def recall(self, question: str) -> dict:
+    async def recall(self, question: str, conversation: str = '') -> dict:
         """Answer from memory, newest and best-connected evidence first.
 
         Three sources are stacked, each adding what the one before cannot see:
@@ -523,6 +636,8 @@ class Memory:
                 log.warning('Supermemory recall failed, answering from local memory: %s', error)
 
         context = '\n\n'.join(blocks)
+        if context and conversation:
+            context += f'\n\nConversation so far:\n{conversation}'
         if context and llm.configured():
             try:
                 text = await llm.complete(

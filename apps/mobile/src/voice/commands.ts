@@ -18,7 +18,8 @@ const CONFIRM = /^\W*(yes|yeah|yep|yup|sure|confirm|go ahead|do it|send it|send|
 export const HELP_TEXT =
   'Say Guide, then tell me what you need. For example: take me to the nearest pharmacy. Take me home. ' +
   'Text Tom I am on my way. Call Tim. Where am I. Which way. Set a timer for ten minutes. ' +
-  'In fifteen minutes take me home. What is in front of me. Read this. Remember this. Open settings. Go back. Stop talking.';
+  'In fifteen minutes take me home. What is in front of me. Read this. Remember this. What was around the chair. ' +
+  'Rename Lee to Leo. Open settings. Go back. Stop talking.';
 
 export function extractCommand(
   transcript: string,

@@ -621,7 +621,7 @@
   }
 
   // ---------- See: continuous local hazard warnings ----------
-  const sources = { gemini: 'Gemini', groq: 'Groq', local: 'on-device', harnessrouter: 'HarnessRouter agent' };
+  const sources = { gemini: 'Gemini', groq: 'Groq', llm: 'language model', local: 'on-device', harnessrouter: 'HarnessRouter agent' };
   const spokenAt = new Map(), seenAt = new Map(), waiting = new Set();
   let looping = false, busy = false, personSeenAt = 0;
   let candidateKey = '', stable = 0, narratedKey = '', narratedAt = 0;
@@ -708,7 +708,7 @@
   /** Show and speak one assistant reply, wherever the request came from. */
   function showReply(reply, asked) {
     clearTimeout(contactNudgeTimer);
-    contactConversation = reply.intent === 'contact_waiting';
+    contactConversation = reply.intent === 'contact_waiting' || reply.intent === 'contact_edit_waiting';
     let meta = reply.provider ? sources[reply.provider] + ' · ' + ((reply.latency_ms || 0) / 1000).toFixed(1) + ' s' : '';
     if (reply.intent === 'pay_confirm' && reply.order) {
       meta = reply.order.mode === 'stripe_test' ? 'Stripe test payment · ' + reply.order.status + ' · ' + reply.order.payment_id : 'Simulated payment';
@@ -721,7 +721,8 @@
       enableLocation();
       return;
     }
-    awaitingAnswer = reply.intent === 'place_set'; // the assistant asked for an address, or to confirm one
+    // The assistant asked for an address, a name, or a missing detail: a short answer is a complete answer.
+    awaitingAnswer = ['place_set', 'contact_edit_waiting', 'clarify'].includes(reply.intent);
     const item = addMessage('guide', reply.say, meta);
     speak(reply.say);
     if (reply.errand && reply.errand.status === 'in_progress') watchErrand(reply.errand.id, 0);

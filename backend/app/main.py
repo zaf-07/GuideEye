@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -153,6 +155,30 @@ async def vision_analyze(
 
 # ---------- Assistant: see, remember, act ----------
 
+def seen_objects(raw) -> list[dict]:
+    """Detections reported by a client, reduced to short label, position and distance."""
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except ValueError:
+            return []
+    if not isinstance(raw, list):
+        return []
+    seen = []
+    for item in raw[:20]:
+        if not isinstance(item, dict):
+            continue
+        label = re.sub(r'[^a-z0-9 -]', '', str(item.get('label') or '').lower()).strip()[:40]
+        if not label:
+            continue
+        position = re.sub(r'[^a-z ,-]', '', str(item.get('position') or '').lower()).strip()[:40]
+        distance = item.get('distance_m')
+        distance = float(distance) if isinstance(distance, (int, float)) and not isinstance(distance, bool) else None
+        area = item.get('area')
+        seen.append({'label': label, 'position': position, 'distance_m': distance,
+                     'area': float(area) if isinstance(area, (int, float)) and not isinstance(area, bool) else 0.0})
+    return seen
+
 @app.post('/assistant')
 async def assistant_respond(
     text: str = Form(..., min_length=1, max_length=300),
@@ -160,13 +186,18 @@ async def assistant_respond(
     image: Optional[UploadFile] = File(None),
     lat: Optional[float] = Form(None),
     lon: Optional[float] = Form(None),
+    detections: Optional[str] = Form(None, max_length=4000),
 ):
-    """One spoken sentence in, one spoken reply out. `image` is the current camera frame, if any."""
+    """One spoken sentence in, one spoken reply out. `image` is the current camera frame, if any.
+
+    `detections` is a JSON list of what the phone's own detector sees right now
+    (label, position, distance_m), so it can be recalled later.
+    """
     started = time.monotonic()
     body, mime = await read_image(image) if image is not None else (None, 'image/jpeg')
     try:
         location = (lat, lon) if lat is not None and lon is not None else None
-        reply = await assistant.respond(session, text, body, mime, location)
+        reply = await assistant.respond(session, text, body, mime, location, seen_objects(detections))
     except vision.VisionError as error:
         raise HTTPException(422, str(error)) from error
     reply['timestamp'] = now()
@@ -186,10 +217,21 @@ async def memory_observe(image: UploadFile = File(...), lat: Optional[float] = F
     # With nothing detected and no model answer there is nothing worth a note.
     return await memory.snapshot(small, mime, vision.local_description(detections) if detections else '', place)
 
+class Sightings(BaseModel):
+    detections: list[dict] = Field(default_factory=list, max_length=20)
+
+
+@app.post('/memory/sightings')
+def memory_sightings(body: Sightings):
+    """Objects a phone's own detector saw. Only labels and positions arrive: no image leaves the phone."""
+    seen = seen_objects(body.detections)
+    memory.record_detections(seen)
+    return {'recorded': len(seen)}
+
 @app.get('/memory')
 def memory_list():
     graph = memory.graph_snapshot()
-    return {'notes': memory.notes(), 'objects': memory.sightings(), 'path_points': len(memory.path()),
+    return {'notes': memory.notes(), 'objects': memory.sightings(), 'scans': memory.scans(20), 'path_points': len(memory.path()),
             'connections': graph['edges'], 'stores_media': False, 'supermemory': memory.remote_status()}
 
 @app.post('/memory/sync')
@@ -212,6 +254,7 @@ def memory_graph(around: Optional[str] = None, depth: int = 2):
 @app.delete('/memory')
 def memory_clear():
     memory.clear()
+    assistant.forget_conversation()
     return {'status': 'cleared'}
 
 # ---------- Recall (the mobile app's memory) ----------

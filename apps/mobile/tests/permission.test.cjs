@@ -31,3 +31,19 @@ test('a reply that asks nothing, or changes a saved address, is left alone', () 
   assert.strictEqual(actsWithoutAsking({ intent: 'message', confirm: null }, true), false);
   assert.strictEqual(actsWithoutAsking({ intent: 'place_set', confirm: 'Save 450 Serra Mall as your home?' }, true), false);
 });
+
+test('a command the language model worked out is always read back first', () => {
+  assert.strictEqual(actsWithoutAsking({ intent: 'message', confirm: 'Send to Mom on WhatsApp?', inferred: true }, true), false);
+  assert.strictEqual(actsWithoutAsking({ intent: 'call', confirm: 'Call Tim?', inferred: false }, true), true);
+});
+
+test('a question from the assistant keeps the microphone open for the answer', () => {
+  const { expectsAnswer } = loadTs('src/voice/permission.ts');
+  for (const intent of ['contact_edit_waiting', 'contact_waiting', 'clarify', 'place_set']) {
+    assert.strictEqual(expectsAnswer({ intent }), true, intent);
+  }
+  for (const intent of ['see', 'chat', 'contact_renamed', 'pay_quote']) {
+    assert.strictEqual(expectsAnswer({ intent }), false, intent);
+  }
+  assert.strictEqual(expectsAnswer(null), false);
+});

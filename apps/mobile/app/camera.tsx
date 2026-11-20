@@ -21,11 +21,11 @@ import { useSceneMemory, rememberHazard } from '../src/memory/capture';
 import { useProfile } from '../src/state/ProfileContext';
 import { hasLocalDetector } from '../src/detector';
 import { AssistMode, getApiUrl, hasVisionBackend, interpretSignSequence, trackFrameFile, useVisionLoop } from '../src/vision';
-import { observeForMemory } from '../src/assistant';
+import { observeForMemory, reportSightings } from '../src/assistant';
 import { narrate, speakAloud, speechBusy } from '../src/lib/announce';
 import { Narrator } from '../src/narration';
 import { currentCoordinates } from '../src/useAssistant';
-import { attentionHeld, isAssistantBusy, recentFrame, setFrameSource } from '../src/voice/frame';
+import { attentionHeld, isAssistantBusy, noteSeenObjects, recentFrame, seenObjects, setFrameSource } from '../src/voice/frame';
 import type { VisionObject } from '../src/vision';
 
 // Keeps the screen from locking while the camera is the user's eyes. A locked
@@ -62,6 +62,7 @@ function pickPictureSize(sizes: string[]): string | undefined {
 const DESCRIPTION_FRESH_MS = 30000;
 // A frame becomes a text memory this often.
 const MEMORY_OBSERVE_MS = 45000;
+const SIGHTINGS_REPORT_MS = 8000;
 
 const emptySignContext: SignContextState = { frameCount: 0, maxFrames: 180, handCount: 0, ready: false };
 
@@ -472,6 +473,24 @@ export default function CameraScreen() {
     }, MEMORY_OBSERVE_MS);
     return () => clearInterval(timer);
   }, [remembersScene]);
+
+  // Scan history: the labels and positions the detector sees go to the
+  // assistant's memory as text, so "what was around the chair?" can be
+  // answered later. No picture is sent, and nothing is sent in local-only mode.
+  const sceneObjects = vision?.objects;
+  const sceneKey = vision?.scene_key;
+  const lastSightings = useRef({ key: '', at: 0 });
+  useEffect(() => {
+    if (isSignMode) return;
+    noteSeenObjects(sceneObjects ?? []);
+    if (!remembersScene || !sceneKey || !getApiUrl()) return;
+    const now = Date.now();
+    if (sceneKey === lastSightings.current.key || now - lastSightings.current.at < SIGHTINGS_REPORT_MS) return;
+    const seen = seenObjects();
+    if (!seen.length) return;
+    lastSightings.current = { key: sceneKey, at: now };
+    reportSightings(seen).catch(() => {});
+  }, [isSignMode, remembersScene, sceneKey, sceneObjects]);
 
   // Fold what the camera sees into the memory graph. Scene mode only: the
   // sign-reading view is a conversation, not a place.

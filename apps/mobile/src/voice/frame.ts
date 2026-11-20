@@ -54,6 +54,35 @@ export async function captureFrame(): Promise<string | null> {
   return last && Date.now() - last.at <= FRESH_MS ? last.uri : null;
 }
 
+export type SeenObject = { label: string; position: string; distance_m?: number | null };
+
+let seen: { objects: SeenObject[]; at: number } | null = null;
+
+/** What the detector currently sees, kept so a spoken request can carry it to the assistant's memory. */
+export function noteSeenObjects(objects: SeenObject[]) {
+  seen = { objects: summarizeSeen(objects), at: Date.now() };
+}
+
+export function seenObjects(maxAgeMs = FRESH_MS): SeenObject[] {
+  return seen && Date.now() - seen.at <= maxAgeMs ? seen.objects : [];
+}
+
+/** Labels and positions only, one entry per kind of object and position, nearest first. */
+export function summarizeSeen(objects: SeenObject[], limit = 12): SeenObject[] {
+  const kept = new Map<string, SeenObject>();
+  for (const item of objects) {
+    const label = String(item.label || '').trim().toLowerCase();
+    if (!label) continue;
+    const distance = typeof item.distance_m === 'number' && Number.isFinite(item.distance_m) ? item.distance_m : null;
+    const previous = kept.get(label);
+    if (previous && (previous.distance_m ?? Infinity) <= (distance ?? Infinity)) continue;
+    kept.set(label, { label, position: String(item.position || '').trim().toLowerCase(), distance_m: distance });
+  }
+  return [...kept.values()]
+    .sort((left, right) => (left.distance_m ?? Infinity) - (right.distance_m ?? Infinity))
+    .slice(0, limit);
+}
+
 /** The most recent frame the scan loop took, if it is still current. Never takes a photo. */
 export function recentFrame(maxAgeMs = FRESH_MS): string | null {
   return last && Date.now() - last.at <= maxAgeMs ? last.uri : null;

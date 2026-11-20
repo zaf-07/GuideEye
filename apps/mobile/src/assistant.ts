@@ -19,7 +19,11 @@ export type AssistantReply = {
   warnings: string[];
   provider?: string | null;
   errand?: { id: string; status: string } | null;
+  /** True when a language model worked out the command from a free-form request. */
+  inferred?: boolean;
 };
+
+export type SeenObject = { label: string; position: string; distance_m?: number | null };
 
 export type RouteUpdate = {
   active: boolean;
@@ -94,8 +98,19 @@ async function attachFrame(data: FormData, field: string, uri: string) {
   }
 }
 
-export async function askAssistant(text: string, location?: Coordinates | null, frameUri?: string | null) {
-  const body = form({ text, session: getSightDeviceId(), lat: location?.lat, lon: location?.lon });
+export async function askAssistant(
+  text: string,
+  location?: Coordinates | null,
+  frameUri?: string | null,
+  seen?: SeenObject[],
+) {
+  const body = form({
+    text,
+    session: getSightDeviceId(),
+    lat: location?.lat,
+    lon: location?.lon,
+    detections: seen?.length ? JSON.stringify(seen) : undefined,
+  });
   if (frameUri) await attachFrame(body, 'image', frameUri).catch(() => {});
   return request<AssistantReply>('/assistant', { method: 'POST', body });
 }
@@ -125,6 +140,15 @@ export function savePlace(name: string, address: string, location?: Coordinates 
 
 export function removePlace(name: string) {
   return request<{ status: string }>(`/places/${encodeURIComponent(name)}`, { method: 'DELETE' });
+}
+
+/** Tell the server what the on-device detector sees, as text only, so it can be recalled later. */
+export function reportSightings(detections: SeenObject[]) {
+  return request<{ recorded: number }>('/memory/sightings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ detections }),
+  });
 }
 
 export async function observeForMemory(frameUri: string, location?: Coordinates | null) {
