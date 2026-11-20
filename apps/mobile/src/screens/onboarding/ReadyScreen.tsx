@@ -30,6 +30,10 @@ export function ReadyScreen() {
     lines.push(`${draft.signLanguage === 'other' ? 'Custom' : draft.signLanguage} sign language bridge`);
     lines.push(`Replies shown as ${draft.replyFormat === 'both' ? 'text and sign avatar' : draft.replyFormat}`);
   }
+  if (hasVisionTrack(draft)) {
+    lines.push(draft.voiceControl !== false ? 'Voice control on: say “Guide”, then what you need' : 'Voice control off: buttons only');
+    if (draft.fullPermission) lines.push('Full permission: calls and messages without asking, payments still ask');
+  }
   if (draft.haptics) lines.push('Haptic proximity feedback on');
   if (draft.captions) lines.push('Large captions on');
 

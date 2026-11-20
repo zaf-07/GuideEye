@@ -456,6 +456,17 @@ export function SettingsScreen() {
         </GlassCard>
       ) : null}
 
+      {hasVisionTrack(profile) ? (
+        <GlassCard>
+          <Row
+            title="Full permission"
+            caption="GuideEye calls and messages your contacts as soon as you ask, without “are you sure?”. Paying always waits for your yes."
+            value={Boolean(profile.fullPermission)}
+            onChange={(v) => patch({ fullPermission: v })}
+          />
+        </GlassCard>
+      ) : null}
+
       <GlassCard>
         <Row
           title="Find nearby GuideEye users"

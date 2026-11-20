@@ -103,6 +103,51 @@ export function VisionSetupScreen() {
           />
         </View>
       </GlassCard>
+
+      <GlassCard>
+        <View style={styles.rowBetween}>
+          <View style={{ flex: 1, gap: 4 }}>
+            <Text variant="section">Voice control</Text>
+            <Text variant="caption" faint>
+              The microphone stays on while GuideEye is open. Say “Guide”, then what you need, from any screen.
+              Turn it off to use buttons only.
+            </Text>
+          </View>
+          <Switch
+            value={draft.voiceControl !== false}
+            onValueChange={(v) => {
+              set({ voiceControl: v });
+              announce({ ...draft, voiceControl: v }, v ? 'Voice control on.' : 'Voice control off.');
+            }}
+            trackColor={{ true: colors.lime, false: 'rgba(255,255,255,0.2)' }}
+            accessibilityLabel="Voice control"
+          />
+        </View>
+      </GlassCard>
+
+      <GlassCard>
+        <View style={styles.rowBetween}>
+          <View style={{ flex: 1, gap: 4 }}>
+            <Text variant="section">Full permission</Text>
+            <Text variant="caption" faint>
+              GuideEye acts as soon as you ask: it opens screens, starts directions, calls and messages your
+              contacts without asking “are you sure?”. Paying always waits for your yes.
+            </Text>
+          </View>
+          <Switch
+            value={Boolean(draft.fullPermission)}
+            onValueChange={(v) => {
+              set({ fullPermission: v });
+              announce(
+                { ...draft, fullPermission: v },
+                v ? 'Full permission on. I will call and message without asking first. Payments still need your yes.' : 'Full permission off. I will ask before I call or message.',
+              );
+            }}
+            trackColor={{ true: colors.lime, false: 'rgba(255,255,255,0.2)' }}
+            accessibilityLabel="Full permission"
+          />
+        </View>
+      </GlassCard>
     </Screen>
   );
 }

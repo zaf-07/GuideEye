@@ -22,12 +22,17 @@ export function PermissionsScreen() {
   const [busy, setBusy] = useState(false);
   const perms: Perm[] = [];
 
+  // Voice control is a choice made on the previous step. With it off, a
+  // blind or low-vision user is not asked for the microphone at all.
+  const wantsVoice = hasVisionTrack(draft) && draft.voiceControl !== false;
   if (hasVisionTrack(draft)) {
     perms.push(
       { icon: 'camera-outline', title: 'Camera', why: 'Reads the scene in front of you and warns about what is ahead.' },
       { icon: 'navigate-outline', title: 'Location & motion', why: 'Keeps you on the path, and knows which way you are facing at a crossing.' },
-      { icon: 'mic-outline', title: 'Microphone', why: 'Hears your voice commands, so you can run GuideEye by saying “Guide” and what you need.' },
     );
+    if (wantsVoice) {
+      perms.push({ icon: 'mic-outline', title: 'Microphone', why: 'Hears your voice commands, so you can run GuideEye by saying “Guide” and what you need.' });
+    }
   }
   if (hasHearingTrack(draft)) {
     perms.push(
@@ -42,10 +47,10 @@ export function PermissionsScreen() {
     setBusy(true);
     try {
       const results = [await Camera.requestCameraPermissionsAsync()];
-      if (hasHearingTrack(draft) || hasVisionTrack(draft)) {
+      if (hasHearingTrack(draft) || wantsVoice) {
         results.push(await Camera.requestMicrophonePermissionsAsync());
       }
-      if (hasVisionTrack(draft)) {
+      if (wantsVoice) {
         await ExpoSpeechRecognitionModule.requestPermissionsAsync().catch(() => null);
       }
       if (hasVisionTrack(draft) || draft.nearbyDiscovery) results.push(await Location.requestForegroundPermissionsAsync());

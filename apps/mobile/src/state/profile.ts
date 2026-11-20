@@ -29,6 +29,8 @@ export interface Profile {
   nearbyDiscovery: boolean;
   /** Blind / low-vision: the microphone stays on and “Guide, …” works from every screen. */
   voiceControl: boolean;
+  /** Calls and messages go ahead as soon as they are asked for. Payments always wait for a yes. */
+  fullPermission: boolean;
   displayName?: string;
   onboardedAt?: string;
 }
@@ -45,6 +47,7 @@ export const DEFAULT_PROFILE: Profile = {
   localOnlyMemory: false,
   nearbyDiscovery: false,
   voiceControl: true,
+  fullPermission: false,
 };
 
 export const hasVisionTrack = (p: Profile) =>
