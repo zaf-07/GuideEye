@@ -16,19 +16,6 @@ We decided on Day 1: **GuideEye must be hands-free, hybrid by design, and never 
 
 ---
 
-## ⚡ Hour 0–8: Taming 20ms Raw Opus Packets from a Wearable Band
-
-Our initial hardware target was the **Vexo Open Band**, connected over Bluetooth Low Energy. 
-
-The problem? Most Bluetooth audio stacks buffer hundreds of milliseconds, making conversational AI feel like an old satellite radio interview. Worse, hackathon hall noise drowned standard threshold detectors.
-
-We built a custom streaming ingestion pipeline in Python:
-- Intercepted 20ms Opus frames from the wristband's custom BLE characteristics.
-- Fed the raw audio buffer into Deepgram Nova-3 with interim streaming tokens.
-- **The Discovery:** We learned mid-build that the Vexo Open band hardware does not contain a vibration motor. Instead of abandoning tactile feedback, we pivoted to an on-device architecture: **Micro-Whisper**. Directional audio pings (*"Left"*, *"Forward"*, *"Stop!"*) and spatial phone haptics guide the wearer's walking line, leaving the band dedicated to high-speed audio ingestion.
-
----
-
 ## 🤝 Hour 9–18: Building the Deaf-Blind Bridge (Two Worlds, Zero Screens)
 
 One of our favorite problems this weekend was communication between two people with complementary sensory impairments:

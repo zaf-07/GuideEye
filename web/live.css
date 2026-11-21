@@ -159,7 +159,7 @@
 .facing-open .spell-line { gap: 1vw 2.5vw; }
 .facing-open .spell-label { min-width: 16vw; color: #fff; font-size: clamp(34px, 5vw, 90px); }
 
-/* Microphone source (bracelet or another microphone) */
+/* Microphone source */
 .mic-source { display: grid; gap: 6px; padding-left: 34px; font-size: 14.5px; }
 .mic-source label { font-weight: 600; color: var(--muted); }
 .mic-source select { min-height: 42px; padding: 0 12px; border-radius: 12px; border: 1px solid var(--glass-border); background: var(--glass-strong); color: var(--ink); font: 500 15px/1 var(--font); max-width: 100%; }
@@ -179,12 +179,9 @@
 .tabs { overflow-x: auto; }
 .tab { padding: 0 10px; white-space: nowrap; }
 
-/* Demo header: status on the left, band on the right, both on one tidy row */
+/* Demo status header */
 .live-bar { align-items: center; }
 .live-status { flex: 1 1 320px; min-width: 0; line-height: 1.35; }
-.band-widget { display: inline-flex; align-items: center; gap: 10px; padding: 6px 6px 6px 14px; border-radius: 999px; background: var(--glass-strong); border: 1px solid var(--glass-border); }
-.band-label { font-size: 14px; font-weight: 600; white-space: nowrap; }
-.band-widget .btn-small { min-height: 36px; padding: 0 16px; font-size: 14px; }
 .service-form { display: grid; gap: 6px; }
 .service-form label { font-size: 14px; font-weight: 600; color: var(--muted); }
 #demo { scroll-margin-top: 96px; }

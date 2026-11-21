@@ -2,20 +2,9 @@
 
 ## Product decision
 
-The strongest story is not “voice control for every Android button.” It is one accessible trust layer between a person, wearable and phone: **hear → understand → preview → confirm → act → acknowledge**. The unique feature is Bridge: the same loop works across disability boundaries through captions, speech and later a deliberately limited, validated sign vocabulary.
+The strongest story is not “voice control for every Android button.” It is one accessible trust layer between a person and their phone: **hear → understand → preview → confirm → act → acknowledge**. The unique feature is Bridge: the same loop works across disability boundaries through captions, speech and later a deliberately limited, validated sign vocabulary.
 
 Recommended wake phrase: **“Guide, I’m ready.”** It is short, brand-linked and does not imply emergency reliability. Push-to-talk remains available because always-on wake-word processing needs battery, privacy and false-activation testing.
-
-## Vexo capability matrix
-
-| Capability | Status | Evidence / decision |
-|---|---|---|
-| Built-in microphone | Verified on band 20 | Official contract: 16 kHz mono Opus, 20 ms packets. A 3-second USB test received 143 packets without storing or transmitting them. |
-| Band vibration | Not present | The official Vexo Open contract explicitly lists vibration as absent. Use Android phone haptics. |
-| USB connection | Verified on band 20 | `GET_INFO` returned band 20, firmware 1.1.0 and protocol 1.1 over `/dev/cu.usbmodem1101`. |
-| Bluetooth connection | Implemented | Exact name `Vexo-HACK-20` plus official service UUID; the kit verifies the reported band number after connecting. |
-| Deepgram live transcription | Implemented, key required | Official kit helper sends Opus directly with `mip_opt_out=true`; key only from `DEEPGRAM_API_KEY` or ignored `.env`. |
-| LED feedback | Verified on band 20 | Official `IDENTIFY` produced a four-second white flash. |
 
 ## Android feasibility
 

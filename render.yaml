@@ -8,8 +8,6 @@ services:
     healthCheckPath: /health
     autoDeploy: true
     envVars:
-      - key: BAND_AUTOCONNECT
-        value: "false"
       # The lightweight hosted image uses the cloud vision fallback. Local
       # development and the mobile/web clients retain their bundled detectors.
       - key: ULTRALYTICS_YOLO_ENABLED

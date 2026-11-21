@@ -43,7 +43,7 @@ cp backend/.env.example backend/.env
 | `GEMINI_API_KEY` | Scene description, reading text, memory answers | Answers come from the on-device detector only |
 | `ELEVENLABS_API_KEY` | Natural voice | The browser's built-in voice is used |
 | `STRIPE_SECRET_KEY` (`sk_test_` or `rk_test_`) | A real Stripe test payment | Payments are simulated and labelled so |
-| `DEEPGRAM_API_KEY` | Listening through a chosen microphone (the bracelet) | Only the browser's own speech recognition works |
+| `DEEPGRAM_API_KEY` | Listening through a selected microphone | Only the browser's own speech recognition works |
 | `WHATSAPP_DESKTOP_SEND=true` | Windows only: press Send in WhatsApp Desktop after a spoken yes | WhatsApp opens with the message ready; you press Send |
 
 ## 4. Start

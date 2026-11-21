@@ -182,7 +182,7 @@ class RadarTests(unittest.TestCase):
 class NearbyApiTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        with mock.patch.dict(os.environ, {'MEMORY_DB': ':memory:', 'BAND_AUTOCONNECT': 'false'}):
+        with mock.patch.dict(os.environ, {'MEMORY_DB': ':memory:'}):
             from backend.app import main
             cls.context = TestClient(main.app)
             cls.client = cls.context.__enter__()

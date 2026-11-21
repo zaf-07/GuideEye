@@ -12,7 +12,6 @@
 - Второй телефон — показать QR-код оплаты.
 - Связка ключей (или другой заметный предмет) на столе.
 - Второй человек — для сцен 2 и 6.
-- Браслет Vexo на руке (если подключите по USB — ещё и в строке статуса).
 - WhatsApp Desktop открыт, вход выполнен.
 
 ---
@@ -95,7 +94,7 @@ python -m uvicorn backend.app.main:app --port 8000
 
 ### Сцена 1 — Вступление (0:00–0:12)
 
-**На экране:** лендинг сверху, заголовок "The AI that sees, remembers and acts for you". Браслет на руке в кадре, если снимаете телефоном.
+**На экране:** лендинг сверху, заголовок "The AI that sees, remembers and acts for you".
 
 **Действие:** медленно прокрутите страницу вниз до раздела "See. Remember. Act.".
 
@@ -232,11 +231,11 @@ python -m uvicorn backend.app.main:app --port 8000
 
 ### Сцена 7 — Финал (1:52–2:00)
 
-**На экране:** строка статуса демо (с "Vexo band on USB", если браслет подключён), затем верх лендинга.
+**На экране:** строка статуса демо, затем верх лендинга.
 
 **Говорите:**
 
-> **"Built on Vexo, Gemini, ElevenLabs, Stripe and Deepgram. GuideEye — an accessibility layer for every AI wearable."**
+> **"Built with Gemini, ElevenLabs, Stripe and Deepgram. GuideEye is an accessibility companion."**
 
 ---
 
@@ -270,8 +269,6 @@ python -m uvicorn backend.app.main:app --port 8000
 
 ## 6. Минута вопросов: честные ответы
 
-**Работает ли браслет?**
-"The band is connected and detected over USB, and its microphone path through Deepgram is built and tested. We're waiting on Vexo's audio and haptics SDK, so in this demo the laptop's microphone and the phone's vibration stand in."
 
 **Это настоящий платёж?**
 "It's a real Stripe API payment in test mode. The code refuses live keys and anything over a fifty-dollar limit, and it never pays without a spoken yes."

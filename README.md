@@ -45,7 +45,6 @@ This table is the honest state of the repository, not the pitch.
 | Android assistant (`android/`): wake phrase, phone control, confirmation screens | Built |
 | Desktop shell (`desktop/`) | Built |
 | FastAPI service (`backend/`): command planning, tasks, events | Built |
-| Vexo USB + Bluetooth probe (`scripts/vexo_probe.py`) | Built, read-only |
 | See — on-device YOLO hazard warnings plus a cloud scene description, with fallbacks | Built: mobile/web use bundled ONNX models; local server development can enable Ultralytics YOLO; hosted Render uses the cloud fallback |
 | Remember — private text-only memory and recall | Built: `/memory`, "Where did I leave my keys?" in the demo |
 | Act — payment gated by a spoken yes | Built: quote, then pay only on yes. Simulated unless a Stripe **test** key is set; live keys are refused |
@@ -54,7 +53,7 @@ This table is the honest state of the repository, not the pitch.
 | Hands-free mode — say "Guide, …" with no buttons; automatic description when the scene changes | Built in the demo (browser speech recognition) |
 | Walking directions — "Take me to the nearest supermarket", turn-by-turn by GPS, "Take me back" | Built: OpenStreetMap search and foot routing, `POST /location` |
 | Place memory — GPS breadcrumbs of the walked path; notes tagged with the street they were made on | Built. Outdoors only: GPS is unreliable indoors |
-| Phone vibration for warnings, confirmations and turns | Built for Android; the Vexo Open band has no vibration motor |
+| Phone vibration for warnings, confirmations and turns | Built for Android |
 | Always-on microphone — one listener for every tab; acts on "Guide, …" | Built in the demo |
 | "Where am I?" — street address from GPS plus a description of the surroundings | Built |
 | Pay by code — the camera reads a payment QR code or a price tag, reads it back, and pays only on yes; refuses anything over the spending limit (`PAY_MAX_CENTS`, default $50) | Built: `GET /pay/qr.png` makes demo codes |
@@ -63,10 +62,8 @@ This table is the honest state of the repository, not the pitch.
 | Bridge — two-way and automatic | Built in the demo. Signs are read on-device with MediaPipe hand and face landmarks. Each sign is read as a whole movement (`web/sign-motion.js`): the hands are followed over time, cut into movements, and each finished movement is matched against about twenty signs by its path, handshape and place at the face; still handshapes are read when held. ASL fingerspelling with the letter model from GuideLens (24 letters; J and Z need motion), each with a live confidence. Speech is shown as large text and as ASL fingerspelling images (Wikimedia Commons, public domain). This is not full sign-language translation |
 | Bridge — sign reading | Experimental: `POST /bridge/sign`, drops low-confidence readings |
 | Voice out | Built: MiniMax Speech 2.8 is preferred when `MINIMAX_API_KEY` is set; Deepgram, ElevenLabs and the browser voice remain fallbacks |
-| Voice in | Browser speech recognition in the demo; `POST /speech/transcribe` (ElevenLabs) is ready for microphones the browser cannot transcribe, such as the bracelet |
+| Voice in | Browser speech recognition in the demo; `POST /speech/transcribe` (ElevenLabs) is ready for microphones the browser cannot transcribe |
 | Mastra agent, Gemini Live streaming | Planned. The assistant currently uses plain rules plus per-frame Gemini calls |
-| Vexo Open microphone | Working over the official contract: 16 kHz mono Opus over USB/BLE; Deepgram helper ready |
-| Vexo Open vibration | Not hardware-capable; official contract says the band has no vibration. Android phone haptics are the tactile channel |
 
 ## Repository layout
 
@@ -75,7 +72,7 @@ web/        Landing page (index.html) and the voice app PWA (app.html)
 android/    Android assistant app
 desktop/    Electron shell around the voice app
 backend/    FastAPI command / task / event service and tests
-scripts/    Vexo Open setup, exact-band bridge and diagnostics
+scripts/    Build and development utilities
 docs/       Product notes and research
 ```
 
@@ -128,7 +125,7 @@ For a phone on the same Wi-Fi, use the computer's LAN address instead of `localh
 
 ## Install the Android assistant
 
-Download the APK from the [latest release](https://github.com/zaf-07/GuideBand/releases/latest), or build it locally (below).
+Build the APK locally using the steps below.
 
 After sideloading it:
 
@@ -148,44 +145,6 @@ cd android
 ```
 
 The release workflow publishes an Android APK, macOS DMG/ZIP, Windows EXE, Linux AppImage/DEB, and the web app on GitHub Pages.
-
-## Vexo Band
-
-The supplied unit enumerates as `Vexo Open band` at `/dev/cu.usbmodem1101` (USB VID `0x2FE3`, PID `0x0004`). Re-check instead of hard-coding the path:
-
-```bash
-python3 scripts/vexo_probe.py
-```
-
-GuideEye uses the official [`vexo-open-kit`](https://github.com/VexoAI-Org/vexo-open-kit) contract. The team band number is stored once as `20`; every connection targets and re-verifies exactly `Vexo-HACK-20` and service UUID `254f0001-df82-4a9c-a2b5-563a0f6b2021`. It never scans for or connects to another team's band.
-
-Set up the unchanged kit and local dependencies, then verify the real device:
-
-```bash
-./scripts/setup_vexo_open_kit.sh
-.venv/bin/python scripts/guideband_vexo.py check --transport serial
-.venv/bin/python scripts/guideband_vexo.py mic-test --transport serial --seconds 3
-```
-
-For Bluetooth, double-tap band 20 so it blinks blue, then use `--transport ble`. `listen` streams the band's Opus packets to Deepgram using the kit's official helper. Put the team's key in `DEEPGRAM_API_KEY` yourself; it is never stored or printed:
-
-```bash
-export DEEPGRAM_API_KEY=...
-.venv/bin/python scripts/guideband_vexo.py listen --transport ble --seconds 10
-```
-
-The Pipecat CLI and its Context Hub can be installed independently of the secret:
-
-```bash
-uv tool install "pipecat-ai[cli]" --with pipecat-ai-context-hub
-pipecat context-hub install
-```
-
-Those commands install developer tooling; they do not contain or create a Deepgram key.
-Get the team key from the event credit link, then type the `export` command yourself in
-the same terminal. Never paste the key into chat, source control, screenshots, or logs.
-
-The contract explicitly states that Vexo Open has no vibration hardware. `identify` flashes its white LED; tactile confirmations come from the Android phone's vibrator.
 
 ## Android reality check
 
@@ -231,11 +190,10 @@ npm run mobile:typecheck
 
 ```bash
 python3 -m unittest discover -s backend/tests -v
-python3 scripts/vexo_probe.py --json
 ```
 
 ## Sources
 
-[Vexo developer docs](https://www.vexoai.com/docs), [Vexo hardware overview](https://www.vexoai.com/), [Android common intents](https://developer.android.com/guide/components/intents-common), [Android accessibility services](https://developer.android.com/guide/topics/ui/accessibility/service).
+[Android common intents](https://developer.android.com/guide/components/intents-common), [Android accessibility services](https://developer.android.com/guide/topics/ui/accessibility/service).
 
 MIT licensed.

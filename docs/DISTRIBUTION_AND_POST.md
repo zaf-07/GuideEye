@@ -16,12 +16,12 @@ Every vision app for blind people asks them to do the one thing that is hardest:
 
 We built GuideEye to change that. 
 
-GuideEye pairs low-latency wearable audio with computer vision to create an ambient, hands-free assistant. It provides instant on-device hazard radar, turn-by-turn walking guidance, private contextual memory, and a two-way Deaf-Blind Bridge that translates signs to spoken voice and voice to real-time live captions and 3D ASL animation.
+GuideEye pairs low-latency microphone input with computer vision to create an ambient, hands-free assistant. It provides instant on-device hazard radar, turn-by-turn walking guidance, private contextual memory, and a two-way Deaf-Blind Bridge that translates signs to spoken voice and voice to real-time live captions and 3D ASL animation.
 
 Most importantly, when users encounter complex physical paperwork—medical discharge summaries, utility letters, clinic bills, or complex forms—GuideEye routes multi-step reasoning through @HarnessRouter using the Universal Harness Protocol (UHP 2026-09-28). The errand agent autonomously analyzes the paperwork, extracts action items, and prepares next steps—always requiring an explicit spoken "Yes" before anything is paid or sent.
 
 🔧 **Hardware & Architecture Clarification:**
-Our audio ingestion captures 20ms Opus voice frames over Bluetooth Low Energy via the Vexo Open Band microphone. Directional navigation cues and micro-whisper haptic alerts run directly on the smartphone, ensuring immediate physical orientation without relying on wearable vibration. Replies are synthesized using natural ElevenLabs voice with instant on-device playback fallback.
+GuideEye captures voice through the device microphone. Directional navigation cues and haptic alerts run directly on the smartphone. Replies are synthesized using natural ElevenLabs voice with instant on-device playback fallback.
 
 Built with Stanford pride for the Big Hack Game! 🌲🏈
 
@@ -40,7 +40,6 @@ Check out our open-source repo, UHP execution traces, and demo: https://github.c
 | **#BigHackGame** | Included | Event hashtag |
 | **#BeatCal** | Included | Required Stanford Big Hack Game hashtag |
 | **@HarnessRouter** | Included | Tagged company account |
-| **Vexo Bracelet Correction** | Corrected | Clarifies BLE audio capture on wristband; haptics on phone |
 | **HarnessRouter Link** | Included | Highlights UHP document errand routing |
 | **Repository Link** | Included | Direct link to public GitHub repo with evidence |
 

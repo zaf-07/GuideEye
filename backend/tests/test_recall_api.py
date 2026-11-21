@@ -21,7 +21,7 @@ class RecallApiTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        with mock.patch.dict(os.environ, {'MEMORY_DB': ':memory:', 'BAND_AUTOCONNECT': 'false'}):
+        with mock.patch.dict(os.environ, {'MEMORY_DB': ':memory:'}):
             from backend.app import main
             cls.main = main
             cls.context = TestClient(main.app)

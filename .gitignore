@@ -1,6 +1,5 @@
 .DS_Store
 .env
-vexo-open-kit/
 .venv*/
 __pycache__/
 *.pyc

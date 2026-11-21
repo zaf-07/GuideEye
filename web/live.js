@@ -16,7 +16,6 @@
   const session = Math.random().toString(36).slice(2, 12);
   let online = false, activeTab = 'assistant';
   let mapsEmbedKey = '', mapDestination = null, mapOrigin = null, mapLastRendered = 0;
-  let bandCursor = -1, bandLive = false; // optional external audio device state
 
   el('apiInput').value = api || location.origin;
 
@@ -70,19 +69,6 @@
       cloudVoice = Boolean(s.speech?.voice && s.speech.voice !== 'browser');
       el('liveStatus').textContent = 'Connected · ' + detector + ' · ' + cloud + ' · ' + (cloudVoice ? ({ deepgram: 'Deepgram', elevenlabs: 'ElevenLabs', minimax: 'MiniMax' }[s.speech.voice] || 'cloud') + ' voice' : 'browser voice') + ' · ' + pay;
       el('liveDot').className = 'dot';
-      showBand(s.wearable);
-      if (s.wearable?.connected) {
-        const wb = s.wearable;
-        const bPct = wb.battery?.percent != null ? ` · ${wb.battery.percent}%` : '';
-        const trans = (wb.transport || 'ble').toUpperCase();
-        el('liveStatus').textContent += ` · external audio device (${wb.band_name || 'connected'}${bPct} via ${trans})`;
-        if (el('webBandLabel')) el('webBandLabel').textContent = `${wb.band_name || 'Connected device'}${bPct} (${trans})`;
-        if (el('webBandDot')) el('webBandDot').className = 'dot';
-        if (el('webBandWidget')) el('webBandWidget').style.display = 'flex';
-      } else {
-        if (el('webBandDot')) el('webBandDot').className = 'dot dot-bad';
-        if (el('webBandWidget')) el('webBandWidget').style.display = 'none';
-      }
       el('qrLink').href = api + '/pay/qr.png?item=Coffee&amount=4.50';
     } catch {
       // The address we tried is wrong or dead. Look for the service elsewhere
@@ -389,28 +375,7 @@
   const hasLocalVoice = () => 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window;
   const setVoiceState = text => { if (el('voiceState')) el('voiceState').textContent = text; };
   const isSpeaking = () => cloudPlaying || Boolean(window.speechSynthesis?.speaking);
-  let lastReplyEnd = 0;
-  /** True while a reply is being spoken (not a short hazard warning). */
-  const replyTalking = () => cloudPlaying || (replySpeaking && Boolean(window.speechSynthesis?.speaking));
-  /** Tell the service the assistant is talking, so the band does not pass that voice back as a request. */
-  let replySpeaking = false, bandMuted = false;
-  // Once a second: mute the band only while a reply is really being spoken. The mute expires by itself
-  // on the service, so it can never get stuck and leave the band deaf.
-  setInterval(() => {
-    const speaking = cloudPlaying || (replySpeaking && Boolean(window.speechSynthesis?.speaking));
-    if (speaking) muteBand(true);
-    else if (bandMuted) muteBand(false);
-    bandMuted = speaking;
-  }, 1000);
-  function muteBand(on) {
-    if (!bandLive) return;
-    const body = new FormData();
-    body.append('on', String(on));
-    body.append('interrupt', String(el('bargeToggle').checked));
-    fetch(api + '/band/mute', { method: 'POST', body, keepalive: true }).catch(() => {});
-  }
   function stopSpeaking() {
-    replySpeaking = false;
     window.speechSynthesis?.cancel();
     if (cloudSource) {
       try { cloudSource.stop(); } catch {}
@@ -426,7 +391,7 @@
     if (!unlockAudio() || audioContext.state !== 'running') throw new Error('audio needs a user gesture');
     const audio = await response.arrayBuffer();
     const buffer = await audioContext.decodeAudioData(audio);
-    const done = () => { cloudPlaying = false; cloudSource = null; lastSpeechEnd = lastReplyEnd = Date.now(); if (bandMuted) { muteBand(false); bandMuted = false; } };
+    const done = () => { cloudPlaying = false; cloudSource = null; lastSpeechEnd = Date.now(); };
     const source = audioContext.createBufferSource();
     source.buffer = buffer;
     source.connect(audioContext.destination);
@@ -446,9 +411,8 @@
     const voices = window.speechSynthesis.getVoices();
     const english = voices.find(voice => /^en(?:[-_]|$)/i.test(voice.lang));
     if (english) utterance.voice = english;
-    utterance.onstart = () => { replySpeaking = !warning; };
-    utterance.onend = () => { lastSpeechEnd = Date.now(); if (replySpeaking) lastReplyEnd = Date.now(); if (replySpeaking && bandMuted) { muteBand(false); bandMuted = false; } replySpeaking = false; };
-    utterance.onerror = () => { replySpeaking = false; setVoiceState('The device voice could not start. Use “Test assistant voice” after allowing sound for this site.'); };
+    utterance.onend = () => { lastSpeechEnd = Date.now(); };
+    utterance.onerror = () => { setVoiceState('The device voice could not start. Use “Test assistant voice” after allowing sound for this site.'); };
     window.speechSynthesis.cancel();
     window.speechSynthesis.speak(utterance);
     setVoiceState('Speaking with your device voice.');
@@ -457,36 +421,11 @@
   const plain = text => text.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
   const recentlySpoken = [];
   /** True when the microphone just heard GuideEye's own voice coming out of the speakers. */
-  function isEcho(heard, source) {
+  function isEcho(heard) {
     // Only speech that arrives while the assistant is talking, or just after, can be its own voice.
-    // The band is muted while a reply plays, so for the band the window is short. Without this limit,
-    // repeating a phrase the assistant had just suggested ("take me home") was thrown away as an echo.
-    const text = plain(heard), now = Date.now(), tail = source === 'band' ? 1500 : 4000;
-    if (!isSpeaking() && now - lastSpeechEnd > tail) return false;
+    const text = plain(heard), now = Date.now();
+    if (!isSpeaking() && now - lastSpeechEnd > 4000) return false;
     return text.length >= 4 && recentlySpoken.some(item => now - item.at < 20000 && item.text.includes(text));
-  }
-  /**
-   * What the user said, with the assistant's own words taken out. Returns '' when it was only an echo.
-   * The band hears the speakers too, so a sentence caught during a reply is a mix of both voices, and
-   * the speech service mishears the echo ("head west" comes back as "head rest"). So an interruption is
-   * only accepted when it starts with a word that begins a request and that the assistant did not say.
-   */
-  const REQUEST_WORD = /^(what|whats|where|wheres|who|how|when|take|tell|text|send|write|buy|pay|stop|cancel|read|remember|change|set|call|navigate|directions|find|open|show|describe|look|zoom|help|go|get|give|remind|start|save|forget|quiet|enough|wait|nearest|closest|is|are|can|could|please)$/;
-  function stripEcho(heard) {
-    const spoken = recentlySpoken.filter(item => Date.now() - item.at < 30000).map(item => item.text).join(' ').split(' ');
-    const said = new Set(spoken), stems = new Set(spoken.filter(w => w.length >= 4).map(w => w.slice(0, 4)));
-    const words = plain(heard).split(' ').filter(Boolean);
-    const wake = words.findIndex(w => /^(guide|guides)$/.test(w));
-    if (wake >= 0 && words.length > wake + 1) return words.slice(wake + 1).join(' '); // "Guide, ..." always wins
-    const own = w => !said.has(w) && !said.has(w.replace(/s$/, '')) && !(w.length >= 4 && stems.has(w.slice(0, 4)));
-    // "is", "are", "can", "please" open a request only when the next word is the user's own as well.
-    const weak = /^(is|are|can|could|please)$/;
-    for (let i = 0; i < words.length; i++) {
-      if (!REQUEST_WORD.test(words[i]) || !own(words[i])) continue;
-      if (weak.test(words[i]) && !(words[i + 1] && own(words[i + 1]))) continue;
-      return words.slice(i).join(' ');
-    }
-    return '';
   }
   function speak(text, { warning = false, force = false } = {}) {
     if (!text) return;
@@ -722,7 +661,6 @@
       return;
     }
     // The assistant asked for an address, a name, or a missing detail: a short answer is a complete answer.
-    awaitingAnswer = ['place_set', 'contact_edit_waiting', 'clarify'].includes(reply.intent);
     const item = addMessage('guide', reply.say, meta);
     speak(reply.say);
     if (reply.errand && reply.errand.status === 'in_progress') watchErrand(reply.errand.id, 0);
@@ -821,9 +759,8 @@
   // my hotel"), and sending after the first pause loses the destination.
   const SPEECH_PAUSE_MS = 2000;
   let interimTimer = null, finalSpeechParts = [], handledText = '', handledAt = 0;
-  let heardThrough = '';
   function heardNote(text, note) {
-    micState('Heard' + heardThrough + ': “' + text + '”' + (note ? ' — ' + note : ''), 'on');
+    micState('Heard: “' + text + '”' + (note ? ' — ' + note : ''), 'on');
   }
   function queueBrowserSpeech(interim = '') {
     clearTimeout(interimTimer);
@@ -840,35 +777,22 @@
       if (completed) handleSpeech(completed);
     }, SPEECH_PAUSE_MS);
   }
-  function handleSpeech(text, source) {
+  function handleSpeech(text) {
     el('askInput').placeholder = micPlaceholder();
     if (!text) return;
-    heardThrough = source === 'band' ? ' (through the Vexo band)' : '';
     const zoomWord = text.toLowerCase().match(/\bzoom (in|out|off|back)\b|\b(reset|no|stop) zoom\b/);
-    if (zoomWord && !isEcho(text, source)) {
+    if (zoomWord && !isEcho(text)) {
       heardNote(text);
       if (zoomWord[1] === 'in') { zoomStep(1); speak('Zoom ' + zoom + ' times.'); }
       else if (zoomWord[1] === 'out') { zoomStep(-1); speak(zoom === 1 ? 'Zoom off.' : 'Zoom ' + zoom + ' times.'); }
       else setZoom(1, true);
       return;
     }
-    if (source === 'band' && el('bargeToggle').checked && (replyTalking() || Date.now() - lastReplyEnd < 1500)) {
-      // The band heard this while the assistant was talking: keep only the words that are not the assistant's own.
-      // A bare "yes" or "no" is the user answering. The assistant never says just that on its own:
-      // its own voice comes back as a whole sentence ("say yes to send, or no to cancel").
-      const answer = /^(?:yes|yeah|yep|yup|no|nope|cancel|okay|ok|sure|correct|right)(?: (?:please|pay|send|send it|do it|change it|save it|thanks))?$/.test(plain(text));
-      const mine = answer ? plain(text) : stripEcho(text);
-      if (!mine) return heardNote(text, 'ignored, that was my own voice');
-      if (/^(stop|quiet|enough|wait|shut up|be quiet)$/.test(mine)) { // just silence, not a new request
-        heardNote(text); stopSpeaking(); buzz(60);
-        return;
-      }
-      text = mine;
-    } else if (!/^(?:yes|yeah|yep|yup|no|nope|cancel|okay|ok)$/.test(plain(text)) && isEcho(text, source)) return heardNote(text, 'ignored, that was my own voice');
-    // The browser's recogniser can deliver one sentence twice within a moment; the band never does.
+    if (!/^(?:yes|yeah|yep|yup|no|nope|cancel|okay|ok)$/.test(plain(text)) && isEcho(text)) return heardNote(text, 'ignored, that was my own voice');
+    // The browser's recogniser can deliver one sentence twice within a moment.
     // A sentence the user deliberately repeats must always get through.
     const key = plain(text);
-    if (source !== 'band' && key === handledText && Date.now() - handledAt < 2000) return;
+    if (key === handledText && Date.now() - handledAt < 2000) return;
     handledText = key; handledAt = Date.now();
     const wake = text.match(WAKE);
     const command = wake ? wake[1].trim() : '';
@@ -888,8 +812,7 @@
   }
   const micPlaceholder = () => el('wakeToggle').checked ? 'Say “Guide, …” or type here' : 'Just talk, or type here';
   function startMic() {
-    if (bandLive) return; // the band is the microphone right now
-    if (el('micSource').value) return void startDeviceMic(); // a chosen microphone, e.g. the bracelet
+    if (el('micSource').value) return void startDeviceMic();
     if (!Recognition || recognizer || micBlocked || !el('micToggle').checked) return;
     const r = new Recognition();
     r.lang = 'en-US'; r.continuous = true; r.interimResults = true;
@@ -925,7 +848,6 @@
   function clearPendingSpeech() {
     clearTimeout(interimTimer);
     finalSpeechParts = [];
-    clearTimeout(heldTimer);
     heldPiece = '';
   }
   function updateMicPower() {
@@ -945,7 +867,7 @@
     }
     updateMicPower();
   }
-  // ----- A chosen microphone (the Vexo bracelet, a headset…) -----
+  // ----- A selected microphone -----
   // The browser's own speech recognition can only use the default microphone, so audio from a
   // chosen one is cut into sentences here by loudness and transcribed by the service (Deepgram).
   let capture = null;
@@ -1012,46 +934,11 @@
       const select = el('micSource'), current = select.value;
       select.length = 1;
       for (const device of devices) select.add(new Option(device.label || 'Microphone', device.deviceId));
-      const bracelet = devices.find(d => /vexo|hack/i.test(d.label));
-      select.value = bracelet ? bracelet.deviceId : (devices.some(d => d.deviceId === current) ? current : '');
-      if (bracelet) addMessage('guide', 'I found the bracelet microphone (' + bracelet.label + ') and I am listening through it.');
+      select.value = devices.some(device => device.deviceId === current) ? current : '';
       el('micSource').onchange();
     } catch { micState('Microphone permission is needed to list microphones', 'off'); }
   }
   el('micRefresh').onclick = listMicrophones;
-  if (el('webBandListenBtn')) {
-    el('webBandListenBtn').onclick = async () => {
-      const btn = el('webBandListenBtn');
-      btn.textContent = 'Connecting…';
-      btn.disabled = true;
-      micState('Connecting to wristband… wait for the solid blue light, then speak.', 'on');
-      try {
-        const imageBlob = await frame(640);
-        const body = new FormData();
-        body.append('seconds', '7');
-        body.append('language', 'en'); // English only: the multilingual mode mishears names
-        if (imageBlob) body.append('image', imageBlob, 'frame.jpg');
-        body.append('session', session);
-        addLocation(body);
-
-        const response = await fetch(api + '/wearable/listen', { method: 'POST', body });
-        const res = await response.json();
-        btn.textContent = 'Processing…';
-        if (res.ok && res.text) {
-          addMessage('user', '“' + res.text + '” (from wristband)');
-          showReply(res, res.text);
-        } else {
-          addMessage('guide', res.detail || res.say || 'No speech was transcribed. Keep the band close to your mouth and speak after the solid blue light appears.');
-        }
-      } catch (err) {
-        addMessage('guide', 'Wristband connection failed: ' + err.message);
-      } finally {
-        btn.textContent = 'Listen on band';
-        btn.disabled = false;
-        micState('Ready', 'on');
-      }
-    };
-  }
   el('micSource').onchange = () => {
     // Switch between the browser's recognition and the chosen microphone.
     const r = recognizer;
@@ -1362,95 +1249,6 @@
     addLocation(body);
     call('/memory/observe', { method: 'POST', body }).then(() => { if (activeTab === 'memory') loadMemory(); }).catch(() => {});
   }, 20000);
-
-  // People pause in the middle of a request: "change my ... home address ... to ...". The band hands
-  // each piece over separately, so a piece that plainly is not finished waits for the next one.
-  const UNFINISHED = /(?:\b(?:my|to|the|a|an|and|or|but|of|at|in|on|for|from|with|about|is|are|we|please|can|could|would|your|get|change|take|tell|set|buy|pay|show|find|give|where|what|how|near|nearest|closest|next)|,)\s*$/i;
-  // Short things that are complete on their own.
-  const SHORT_REQUEST = /^(?:yes|yeah|yep|no|nope|okay|ok|cancel|stop|help|pay|pay this|buy this|scan this|read this|read text|read the text|remember this|take me home|take me back|go back|go home|where am i|what is this|whats this|what's this|stop navigation|zoom in|zoom out|reset zoom|forget everything|thank you|thanks)\b[\s.!?]*$|^(?:yes|yeah|yep|no|nope|okay|ok|cancel|stop)\b.{0,24}$/i;
-  let heldPiece = '', heldTimer = null, awaitingAnswer = false;
-  function bandPiece(text) {
-    if (!el('micToggle').checked) return;
-    clearTimeout(heldTimer);
-    const whole = (heldPiece + ' ' + text).trim();
-    heldPiece = '';
-    const words = whole.split(/\s+/).length;
-    // A yes or no, or an address, is expected right now: short answers are complete answers.
-    const answering = !el('confirmBar').hidden || awaitingAnswer;
-    const fragment = words <= 3 && !SHORT_REQUEST.test(whole) && !answering;
-    if ((UNFINISHED.test(whole) && words <= 10) || fragment) {
-      heldPiece = whole;
-      micState('Heard (through the Vexo band): “' + whole + '…”', 'on');
-      heldTimer = setTimeout(() => {
-        const rest = heldPiece;
-        heldPiece = '';
-        if (!rest) return;
-        // A proper sentence that merely trailed off is still handled. Two or three stray words are not:
-        // answering "can you show" or "change it" with a description of the room only gets in the way.
-        if (rest.split(/\s+/).length > 3) handleSpeech(rest, 'band');
-        else micState('Heard (through the Vexo band): “' + rest + '” — not enough to act on', 'on');
-      }, 4500);
-      return;
-    }
-    handleSpeech(whole, 'band');
-  }
-
-  // ---------- Vexo band microphone ----------
-  // The service keeps one permanent connection to the band. Sentences heard through it arrive here
-  // and are handled like any other speech; while the band is connected the laptop microphone rests,
-  // so nothing is heard twice.
-  function showBandLive(band) {
-    const was = bandLive;
-    bandLive = Boolean(band && band.connected);
-    el('webBandDot').className = 'dot' + (bandLive ? '' : (band?.running ? ' dot-off' : ' dot-bad'));
-    el('webBandLabel').textContent = bandLive
-      ? (band.name || 'Vexo band') + (band.battery != null ? ' · ' + band.battery + '%' : '') + ' · listening'
-      : (band?.running ? 'Looking for the band… double-tap it' : 'Vexo band off');
-    el('webBandListenBtn').textContent = band?.running ? 'Disconnect' : 'Connect band';
-    el('webBandListenBtn').disabled = false;
-    el('bandDot').className = el('webBandDot').className;
-    el('bandStatus').textContent = bandLive ? 'Connected — ' + (band.name || 'Vexo band') + ', always listening'
-      : (band?.running ? 'Looking for the band…' : 'Not connected');
-    el('bandDetail').textContent = bandLive
-      ? 'Battery ' + (band.battery ?? '?') + '% · the connection stays open, just speak into the band.'
-      : 'Double-tap the band so its light blinks blue and keep it close. It connects by itself and stays connected.';
-    if (bandLive && !was && el('micToggle').checked) {
-      const r = recognizer; recognizer = null;
-      if (r) { r.onend = null; r.abort(); }
-      stopDeviceMic();
-      micState('Listening through the Vexo band', 'on');
-      addMessage('guide', 'The band is connected. Just speak into it.');
-    }
-    if (!bandLive && was) { micState('Microphone off', 'off'); startMic(); }
-  }
-  setInterval(async () => {
-    if (!online) return;
-    try {
-      // Only the page that is actually on screen takes the band's speech, so two open tabs do not both answer.
-      const mine = document.visibilityState === 'visible' ? '&client=' + session : '&client=idle-' + session;
-      const heard = await call('/band/heard?after=' + Math.max(0, bandCursor) + mine);
-      showBandLive(heard.band);
-      if (bandCursor < 0) { bandCursor = heard.last; return; } // ignore anything said before this page opened
-      bandCursor = heard.last;
-      // Keep the hardware state visible but discard every received fragment
-      // while the user has turned voice input off.
-      if (!el('micToggle').checked) return;
-      for (const item of heard.items) bandPiece(item.text);
-    } catch {}
-  }, 700);
-  el('webBandListenBtn').onclick = async () => {
-    const running = el('webBandListenBtn').textContent === 'Disconnect';
-    el('webBandListenBtn').disabled = true;
-    try { await call(running ? '/band/stop' : '/band/start', { method: 'POST' }); }
-    catch (error) { addMessage('error', error.message); }
-  };
-
-  // ---------- Settings: band connection and permissions ----------
-  function showBand() {} // the header pill and the Settings card are kept current by showBandLive
-  el('bandCheck').onclick = async () => {
-    try { await call('/band/start', { method: 'POST' }); } catch (error) { el('bandStatus').textContent = error.message; }
-  };
-  el('bandListen').onclick = () => selectTab('assistant');
 
   const permissionText = { granted: 'Allowed', prompt: 'Not allowed yet', denied: 'Blocked — allow it from the lock icon in the address bar', on: 'On', unknown: 'Ask to find out' };
   async function refreshPermissions() {

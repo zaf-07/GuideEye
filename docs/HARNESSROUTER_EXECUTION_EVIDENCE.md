@@ -26,7 +26,7 @@ HarnessRouter (`chrn_e00fb0a783d07115989457c64f6364d0`) provides:
 ## 2. Architecture & Request Pipeline
 
 ```
-[User Wearable / Phone]
+[Phone]
        │
        ▼ Spoken: "Explain this clinic bill and tell me what to do" + Camera Image
 [GuideEye FastAPI Server: /assistant]

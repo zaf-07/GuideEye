@@ -4,16 +4,13 @@ import asyncio
 import json
 import os
 import re
-import subprocess
-import sys
 import time
-from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional, Union
 from uuid import uuid4
 
-from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, Form, HTTPException, Response, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -25,7 +22,6 @@ from .services import bridge, checkout, errand, llm, messaging, navigation, spee
 from .services.assistant import Assistant
 from .services.memory import Memory
 from .services.payments import CATALOGUE, Orders, is_test_key, money
-from .services.wearable import WearableError, status as wearable_status, listen_band, refresh_band_state
 
 load_env()
 
@@ -34,15 +30,7 @@ MAX_IMAGE_BYTES = int(os.getenv('MAX_IMAGE_BYTES', str(10 * 1024 * 1024)))
 IMAGE_TYPES = {'image/jpeg', 'image/png', 'image/webp'}
 DEFAULT_ORIGINS = 'http://localhost:4173,http://127.0.0.1:4173,http://localhost:8000,http://127.0.0.1:8000,https://zaf-07.github.io'
 
-@asynccontextmanager
-async def lifespan(_: FastAPI):
-    if os.getenv('BAND_AUTOCONNECT', 'true').lower() not in {'0', 'false', 'no'}:
-        band_start()
-    yield
-    band_stop()
-
-
-app = FastAPI(title='GuideEye Local API', version='0.3.0', lifespan=lifespan)
+app = FastAPI(title='GuideEye Local API', version='0.3.0')
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[o.strip() for o in os.getenv('CORS_ORIGINS', DEFAULT_ORIGINS).split(',')],
@@ -97,7 +85,6 @@ def maps_config():
 def system_status():
     stripe_key = os.getenv('STRIPE_SECRET_KEY', '')
     return {
-        'wearable': band_view(),
         'modules': {'commands':'ready','journey':'demo','bridge':'ready','vision':vision.detector.status()['state']},
         'vision': {'detector': vision.detector.status(), 'depth': vision.depth_estimator.status(), 'cloud_providers': vision.configured_providers(), 'model': llm.model()},
         'payments': {'mode': 'stripe_test' if is_test_key(stripe_key) else ('refused_live_key' if stripe_key else 'simulated'),
@@ -459,7 +446,7 @@ async def speech_out(text: str = Form(..., min_length=1, max_length=speech.MAX_T
 
 @app.post('/speech/transcribe')
 async def speech_in(audio: UploadFile = File(...)):
-    """A short audio clip in, text out. For microphones the browser cannot transcribe, like the bracelet."""
+    """A short audio clip in, text out. For microphones the browser cannot transcribe."""
     if speech.transcriber() is None:
         raise HTTPException(503, 'No transcription service is configured')
     body = await audio.read(10 * 1024 * 1024 + 1)
@@ -487,139 +474,6 @@ def bridge_translate(sequence: SignSequence):
     translation = bridge.translate_sequence(sequence.signs)
     return {'signs': sequence.signs, 'translation': translation, 'supported': bool(translation)}
 
-# ---------- Band microphone ----------
-# scripts/band_assistant.py posts each sentence heard through the Vexo band here; the open
-# live demo polls for them and treats them exactly like speech from the laptop microphone.
-band_heard: list[dict] = []
-band_counter = 0
-
-# One background process (scripts/band_assistant.py) keeps a single Bluetooth connection to the band,
-# so there is no reconnecting for every sentence. It reports here that it is alive.
-band_state = {'connected': False, 'last_seen': 0.0, 'name': None, 'battery': None}
-band_process: subprocess.Popen | None = None
-BAND_SCRIPT = Path(__file__).resolve().parents[2] / 'scripts' / 'band_assistant.py'
-BAND_KIT = Path(__file__).resolve().parents[2] / 'vexo-open-kit'
-
-
-def band_running() -> bool:
-    return band_process is not None and band_process.poll() is None
-
-
-def band_connected() -> bool:
-    return band_state['connected'] and time.time() - band_state['last_seen'] < 15
-
-
-def band_start() -> bool:
-    """Start the permanent band connection, once."""
-    global band_process
-    if band_running():
-        return True
-    if not BAND_SCRIPT.is_file() or not BAND_KIT.is_dir():
-        return False
-    service = f"http://127.0.0.1:{os.getenv('GUIDEBAND_PORT', '8000')}"
-    band_process = subprocess.Popen(
-        [sys.executable, str(BAND_SCRIPT), '--service', service],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env={**os.environ, 'PYTHONUNBUFFERED': '1'},
-    )
-    return True
-
-
-def band_stop() -> None:
-    global band_process
-    if band_running():
-        band_process.terminate()
-    band_process = None
-    band_state.update(connected=False)
-
-
-def band_view() -> dict:
-    """The wearable status, with the live connection taken into account."""
-    view = wearable_status()
-    view['bridge_running'] = band_running()
-    if band_connected():
-        view.update(connected=True, transport='ble', streaming=True)
-        if band_state['name']:
-            view['band_name'] = band_state['name']
-        if band_state['battery'] not in (None, ''):
-            view['battery'] = {'percent': band_state['battery'], 'charging': False, 'state': 'battery'}
-    elif band_running():
-        view.update(connected=False, streaming=False)  # still looking for the band
-    return view
-
-
-@app.post('/band/start')
-def band_start_endpoint():
-    if not band_start():
-        raise HTTPException(503, 'The Vexo kit is not installed. Run scripts/setup_vexo_open_kit.sh first.')
-    return band_view()
-
-
-@app.post('/band/stop')
-def band_stop_endpoint():
-    band_stop()
-    return band_view()
-
-
-@app.post('/band/state')
-def band_state_update(connected: bool = Form(...), name: str = Form(''), battery: str = Form('')):
-    band_state.update(connected=connected, last_seen=time.time())
-    if name:
-        band_state['name'] = name
-    if battery.isdigit():
-        band_state['battery'] = int(battery)
-    return {'ok': True}
-
-
-# While the assistant is speaking, the band must not pass its voice back in as a request.
-band_muted_until = 0.0
-band_interrupt = False
-
-
-@app.post('/band/mute')
-def band_mute_set(on: bool = Form(...), interrupt: bool = Form(False)):
-    """The page calls this when the assistant starts (on) and stops (off) speaking.
-
-    With `interrupt` the band keeps listening while the assistant talks, so the user can cut in;
-    the page then removes the assistant's own words from what comes back.
-    """
-    global band_muted_until, band_interrupt
-    # The page repeats 'on' every second while it is really speaking; if it stops, this ends by itself.
-    band_muted_until = time.time() + (2.5 if on else 0.25)
-    band_interrupt = interrupt
-    return {'speaking': on, 'muted': on and not interrupt}
-
-
-@app.get('/band/mute')
-def band_mute_get():
-    speaking = time.time() < band_muted_until
-    return {'speaking': speaking, 'muted': speaking and not band_interrupt}
-
-
-@app.post('/band/heard', status_code=201)
-def band_heard_add(text: str = Form(..., min_length=1, max_length=300)):
-    global band_counter
-    band_counter += 1
-    band_state.update(connected=True, last_seen=time.time())
-    band_heard.append({'id': band_counter, 'text': text.strip()})
-    del band_heard[:-20]
-    return {'id': band_counter}
-
-
-@app.get('/band/heard')
-def band_heard_list(after: int = 0, client: str = ''):
-    items = []
-    for item in band_heard:
-        if item['id'] <= after:
-            continue
-        if client:
-            owner = item.setdefault('client', client)  # the first page to ask handles the sentence
-            if owner != client:
-                continue
-        items.append({'id': item['id'], 'text': item['text']})
-    return {'last': band_counter, 'items': items,
-            'band': {'connected': band_connected(), 'running': band_running(),
-                     'name': band_state['name'], 'battery': band_state['battery']}}
-
 # ---------- Tasks and events ----------
 
 @app.post('/tasks', status_code=201)
@@ -639,80 +493,6 @@ async def events(ws: WebSocket):
             await ws.send_json({'event': 'ack', 'message': message, 'timestamp': now()})
     except WebSocketDisconnect:
         pass
-
-# ---------- Wearable / Vexo Band ----------
-
-@app.get('/wearable/status')
-def get_wearable_status():
-    return band_view()
-
-@app.post('/wearable/refresh')
-async def post_wearable_refresh():
-    if not band_running():
-        await refresh_band_state()
-    return band_view()
-
-@app.post('/wearable/listen')
-async def post_wearable_listen(request: Request):
-    content_type = request.headers.get('content-type', '')
-    seconds = 7.0
-    language = 'multi'
-    image_bytes = None
-    mime = 'image/jpeg'
-    session = 'wearable'
-    location = None
-    if 'multipart/form-data' in content_type:
-        form = await request.form()
-        session = str(form.get('session') or 'wearable')[:64]
-        try:
-            location = (float(form['lat']), float(form['lon']))
-        except (KeyError, ValueError, TypeError):
-            location = None
-        try:
-            seconds = float(form.get('seconds', 7.0))
-        except (ValueError, TypeError):
-            seconds = 7.0
-        language = str(form.get('language', 'multi'))
-        upload = form.get('image')
-        if hasattr(upload, 'read'):
-            raw = await upload.read(MAX_IMAGE_BYTES + 1)
-            mime = getattr(upload, 'content_type', 'image/jpeg') or 'image/jpeg'
-            if len(raw) <= MAX_IMAGE_BYTES:
-                image_bytes, mime = vision.normalize_image(raw, mime)
-    elif 'application/json' in content_type:
-        try:
-            data = await request.json()
-            seconds = float(data.get('seconds', 7.0))
-            language = str(data.get('language', 'en'))
-        except Exception:
-            pass
-
-    seconds = seconds if 1.0 <= seconds <= 30.0 else 7.0
-    if band_running():
-        return {'ok': False, 'text': '', 'action': None,
-                'say': 'The band is already listening all the time. Just speak.' if band_connected()
-                else 'I am still looking for the band. Double-tap it and keep it close.'}
-    try:
-        transcript = await listen_band(seconds=seconds, language=language)
-    except WearableError as error:
-        raise HTTPException(503, str(error)) from error
-    if not transcript:
-        return {
-            'ok': False,
-            'text': '',
-            'say': 'No speech was transcribed. Keep the band 10–20 cm from your mouth and speak after the solid blue light appears.',
-            'action': None,
-        }
-    # Same session and location as the page, so a spoken yes confirms what the page is showing.
-    reply = await assistant.respond(session, transcript, image_bytes, mime, location)
-    return {
-        **reply,
-        'ok': True,
-        'text': transcript,
-        'say': reply.get('say', ''),
-        'action': reply.get('action'),
-        'data': reply.get('data'),
-    }
 
 # Serve the web app from the same origin, so one address (and one HTTPS
 # certificate or tunnel) covers both the page and the API on a phone.

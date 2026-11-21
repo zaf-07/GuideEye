@@ -49,7 +49,7 @@
       font-weight: 700;
       font-size: 1.25rem;
     }
-    .band-widget {
+    .service-widget {
       display: flex;
       align-items: center;
       gap: 0.75rem;
@@ -59,7 +59,7 @@
       border: 1px solid var(--glass-border);
       box-shadow: 0 4px 14px var(--shadow);
     }
-    .band-indicator {
+    .service-indicator {
       display: flex;
       align-items: center;
       gap: 0.5rem;
@@ -67,7 +67,7 @@
       font-weight: 600;
       color: var(--ink);
     }
-    .band-indicator .dot {
+    .service-indicator .dot {
       width: 10px;
       height: 10px;
       border-radius: 50%;
@@ -76,34 +76,9 @@
       display: inline-block;
       transition: all 0.3s;
     }
-    .band-indicator .dot.dot-searching {
+    .service-indicator .dot.dot-searching {
       background: #f59e0b;
       box-shadow: 0 0 10px #f59e0b;
-    }
-    .band-btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.4rem;
-      background: var(--accent);
-      color: var(--accent-ink);
-      border: none;
-      padding: 0.4rem 0.85rem;
-      border-radius: 999px;
-      font-size: 0.82rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: transform 0.15s, opacity 0.15s;
-    }
-    .band-btn:hover {
-      opacity: 0.92;
-      transform: scale(1.02);
-    }
-    .band-btn:active {
-      transform: scale(0.98);
-    }
-    .band-btn.listening {
-      background: #ef4444;
-      animation: pulse-red 1.2s infinite;
     }
     .app-nav {
       display: flex;
@@ -330,8 +305,8 @@
       </a>
 
       <!-- Service status: GuideEye uses the phone or computer microphone. -->
-      <div class="band-widget" id="bandWidget">
-        <div class="band-indicator" id="bandIndicator">
+      <div class="service-widget">
+        <div class="service-indicator">
           <span class="dot dot-searching" id="serviceDot"></span>
           <span id="serviceStatus">Checking service…</span>
         </div>
@@ -483,6 +458,6 @@
   </dialog>
 
   <script src="api-config.js?v=1"></script>
-  <script src="app.js?v=7"></script>
+  <script src="app.js?v=8"></script>
 </body>
 </html>

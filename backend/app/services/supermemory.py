@@ -7,7 +7,7 @@ it first. That buys three things the local store cannot do on its own:
 
   * meaning, not keywords — "where's my wallet" finds "left the brown billfold
     on the hall shelf";
-  * memory that outlives one device, shared across the phone, band and desktop;
+  * memory that outlives one device, shared across the phone and desktop;
   * connections across notes, so an answer can be assembled from several
     sightings days apart.
 

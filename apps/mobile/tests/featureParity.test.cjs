@@ -23,32 +23,6 @@ test('micro-whisper cues include expected directional sequence', () => {
   assert.strictEqual(cues[3].haptic, 'heavy');
 });
 
-test('wearable status parses Vexo BLE band metadata accurately', () => {
-  const parseBandStatus = (data) => {
-    const connected = Boolean(data && data.connected);
-    const name = (data && data.band_name) || 'Vexo-HACK-20';
-    const battery = data && data.battery && data.battery.percent != null ? `${data.battery.percent}%` : 'unknown';
-    const transport = ((data && data.transport) || 'ble').toUpperCase();
-    return { connected, name, battery, transport };
-  };
-
-  const disconnected = parseBandStatus({ connected: false });
-  assert.strictEqual(disconnected.connected, false);
-  assert.strictEqual(disconnected.name, 'Vexo-HACK-20');
-  assert.strictEqual(disconnected.battery, 'unknown');
-  assert.strictEqual(disconnected.transport, 'BLE');
-
-  const connected = parseBandStatus({
-    connected: true,
-    band_name: 'Vexo-HACK-20',
-    battery: { percent: 88 },
-    transport: 'ble',
-  });
-  assert.strictEqual(connected.connected, true);
-  assert.strictEqual(connected.battery, '88%');
-  assert.strictEqual(connected.transport, 'BLE');
-});
-
 test('HarnessRouter UHP agent badge detection and errand metadata', () => {
   const checkUhpBadge = (reply) => {
     return Boolean(reply.provider === 'harnessrouter' || reply.errand);

@@ -183,69 +183,6 @@ function ServerCard() {
   );
 }
 
-interface WearableStatus {
-  connected: boolean;
-  band_name?: string;
-  battery?: { percent?: number };
-  transport?: string;
-  detail?: string;
-}
-
-function WearableCard() {
-  const [band, setBand] = useState<WearableStatus | null>(null);
-  const [checking, setChecking] = useState(false);
-
-  const checkBand = useCallback(async () => {
-    if (!apiUrl()) return;
-    setChecking(true);
-    try {
-      const data = await apiJson<WearableStatus>('/wearable/status');
-      setBand(data);
-    } catch {
-      setBand({ connected: false, detail: 'Could not contact wearable service.' });
-    } finally {
-      setChecking(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (apiUrl()) void checkBand();
-  }, [checkBand]);
-
-  const connected = Boolean(band?.connected);
-
-  return (
-    <GlassCard>
-      <Text variant="caption" faint>WEARABLE ACCESSORY</Text>
-      <View style={styles.row}>
-        <View style={{ flex: 1 }}>
-          <Text variant="section">Vexo Smart Band</Text>
-          <Text variant="caption" muted>
-            {connected
-              ? `${band?.band_name || 'Vexo-HACK-20'} · ${(band?.transport || 'ble').toUpperCase()} · battery ${band?.battery?.percent != null ? band.battery.percent + '%' : 'unknown'}`
-              : 'Searching BLE / offline'}
-          </Text>
-        </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: connected ? colors.lime : colors.amber }} />
-          <Text variant="caption" style={{ color: connected ? colors.lime : colors.amber, fontWeight: '600' }}>
-            {connected ? 'Connected' : 'Searching'}
-          </Text>
-        </View>
-      </View>
-      <Button
-        label={checking ? 'Checking band…' : 'Check band connection'}
-        tone="glass"
-        disabled={checking || !apiUrl()}
-        onPress={() => void checkBand()}
-        hint="Queries GuideEye for connected Vexo BLE wristband status."
-        style={{ marginTop: spacing.sm }}
-        icon={<Ionicons name="watch-outline" size={20} color={colors.text} />}
-      />
-    </GlassCard>
-  );
-}
-
 function HomeAddressCard() {
   const [home, setHome] = useState('');
   const [address, setAddress] = useState('');
@@ -503,7 +440,6 @@ export function SettingsScreen() {
 
       <ServerCard />
 
-      <WearableCard />
 
     </Screen>
   );

@@ -18,7 +18,7 @@ and
 **Stanford Accessible Campus Initiative / Partner Student Disability Network** ("Client")  
 
 ### Background:
-Client supports blind, low-vision, and hard-of-hearing university students and campus visitors who require hands-free navigation, accessible document comprehension (clinic bills, academic paperwork, room schedules), and direct peer-to-peer communication across sensory barriers. Provider has developed GuideEye, an ambient assistive system integrating on-device spatial vision, wearable voice input, ElevenLabs natural narration, and HarnessRouter Universal Harness Protocol (UHP) autonomous document errand execution.
+Client supports blind, low-vision, and hard-of-hearing university students and campus visitors who require hands-free navigation, accessible document comprehension (clinic bills, academic paperwork, room schedules), and direct peer-to-peer communication across sensory barriers. Provider has developed GuideEye, an ambient assistive system integrating on-device spatial vision, device microphone input, ElevenLabs natural narration, and HarnessRouter Universal Harness Protocol (UHP) autonomous document errand execution.
 
 ### Terms of Pilot Deployment:
 1. **Scope of Pilot:** Provider will deploy GuideEye across ten (10) active student pilot participants on campus for a duration of three (3) months starting December 1, 2026.

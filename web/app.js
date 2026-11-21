@@ -42,19 +42,6 @@
     const pill = $('#clockPill');
     if (pill) pill.innerHTML = `<span class="dot"></span>${dayStr} · ${timeStr}`;
   }
-  function updateSettingsBand(data) {
-    const dot = $('#settingsBandDot');
-    const state = $('#settingsBandState');
-    const details = $('#settingsBandDetails');
-    if (!dot || !state || !details) return;
-    const connected = Boolean(data.connected);
-    dot.className = connected ? 'dot' : 'dot dot-searching';
-    state.textContent = connected ? 'Connected' : 'Not connected';
-    const transport = (data.transport || 'ble').toUpperCase();
-    details.textContent = connected
-      ? `${data.band_name || 'Vexo-HACK-20'} · ${transport} · battery ${data.battery?.percent != null ? data.battery.percent + '%' : 'unknown'}`
-      : (data.capabilities?.find(item => item.name === 'bluetooth_presence')?.evidence || 'No connected Vexo BLE device detected');
-  }
   updateClock();
   setInterval(updateClock, 1000);
 
@@ -82,43 +69,6 @@
     }
   }
 
-  // --- Vexo Band Status Poller ---
-  let bandConnected = false;
-  async function pollWearableStatus() {
-    try {
-      const res = await fetch(`${API}/wearable/status`);
-      if (res.ok) {
-        const data = await res.json();
-        bandConnected = Boolean(data.connected);
-        const name = data.band_name || 'Vexo-HACK-20';
-        const batt = data.battery?.percent != null ? `${data.battery.percent}%` : 'battery unknown';
-        const transport = (data.transport || 'ble').toUpperCase();
-
-        const dot = $('#bandDot');
-        const bandName = $('#bandName');
-        const bandBattery = $('#bandBattery');
-        const bandBtn = $('#bandListenBtn');
-
-        if (dot && bandName && bandBattery) {
-          if (bandConnected) {
-            dot.className = 'dot';
-            bandName.textContent = name;
-            bandBattery.textContent = `${batt} (${transport})`;
-            if (bandBtn) bandBtn.style.display = 'inline-flex';
-          } else {
-            dot.className = 'dot dot-searching';
-            bandName.textContent = name;
-            bandBattery.textContent = 'Searching BLE...';
-          }
-        }
-        updateSettingsBand(data);
-      }
-    } catch (_) {
-      // Backend might be offline
-      const dot = $('#bandDot');
-      if (dot) dot.className = 'dot dot-searching';
-    }
-  }
   checkService();
   setInterval(checkService, 15000);
 
@@ -152,70 +102,6 @@
     return new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.85));
   }
 
-  // --- Vexo Band Voice Listening (BLE -> Deepgram Nova-3 -> Assistant) ---
-  let isListeningBand = false;
-  async function listenThroughBand(seconds = 7) {
-    if (isListeningBand) return;
-    isListeningBand = true;
-
-    const btn = $('#bandListenBtn');
-    const orb = $('#talkOrb');
-    const stateLabel = $('#talkState');
-    const heardEl = $('#heardText');
-    const replyEl = $('#replyText');
-
-    if (btn) {
-      btn.classList.add('listening');
-      $('#bandBtnText').textContent = 'Connecting…';
-    }
-
-    if (orb) orb.classList.add('listening');
-    if (stateLabel) stateLabel.textContent = 'Connecting to Vexo… wait for the solid blue light, then speak.';
-    if (heardEl) heardEl.textContent = 'Recording wristband audio (Deepgram Nova-3)…';
-
-    try {
-      const frameBlob = await getCameraFrameBlob();
-      const body = new FormData();
-      body.append('seconds', String(seconds));
-      body.append('language', 'multi');
-      if (frameBlob) {
-        body.append('image', frameBlob, 'frame.jpg');
-      }
-
-      const res = await fetch(`${API}/wearable/listen`, {
-        method: 'POST',
-        body
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.ok && data.text) {
-          heardEl.textContent = `“${data.text}”`;
-          replyEl.textContent = data.say || 'Understood.';
-          speak(data.say);
-          if (data.open_url) window.open(data.open_url, '_blank', 'noopener');
-        } else {
-          heardEl.textContent = 'No speech detected on band.';
-          replyEl.textContent = data.say || 'No speech was transcribed. Keep the band close to your mouth and speak after the solid blue light appears.';
-        }
-      } else {
-        heardEl.textContent = 'Could not stream band audio.';
-        const error = await res.json().catch(() => ({}));
-        replyEl.textContent = error.detail || 'Check that the band is powered on and double-tapped.';
-      }
-    } catch (err) {
-      heardEl.textContent = 'Connection error with GuideEye backend.';
-      replyEl.textContent = String(err);
-    } finally {
-      isListeningBand = false;
-      if (btn) {
-        btn.classList.remove('listening');
-        $('#bandBtnText').textContent = 'Listen on Band';
-      }
-      if (orb) orb.classList.remove('listening');
-      if (stateLabel) stateLabel.textContent = 'Tap or hold to speak';
-    }
-  }
-
   // --- Talk Orb: browser microphone ---
   const orb = $('#talkOrb');
   if (orb) {
@@ -235,7 +121,7 @@
     const orb = $('#talkOrb');
     const stateLabel = $('#talkState');
     if (orb) orb.classList.add('listening');
-    if (stateLabel) stateLabel.textContent = 'Listening through Mac microphone…';
+    if (stateLabel) stateLabel.textContent = 'Listening through your microphone…';
 
     r.onresult = async e => {
       const text = [...e.results].map(x => x[0].transcript).join('');

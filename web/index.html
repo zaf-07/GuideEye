@@ -11,7 +11,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:ital,wght@0,400..700;1,400..700&display=swap">
   <link rel="stylesheet" href="landing.css?v=7">
-  <link rel="stylesheet" href="live.css?v=27">
+  <link rel="stylesheet" href="live.css?v=28">
   <title>GuideEye — The AI that sees, remembers and acts for you</title>
 </head>
 <body>
@@ -180,11 +180,6 @@
       <div class="live" id="live">
         <div class="live-bar">
           <p class="live-status" role="status"><span class="dot dot-off" id="liveDot"></span><span id="liveStatus">Checking the GuideEye service…</span></p>
-          <div class="band-widget" id="webBandWidget">
-            <span class="dot dot-off" id="webBandDot"></span>
-            <span class="band-label" id="webBandLabel">External microphone not connected</span>
-            <button class="btn btn-primary btn-small" id="webBandListenBtn" type="button">Connect audio device</button>
-          </div>
         </div>
 
         <div class="live-offline" id="liveOffline" hidden>
@@ -361,16 +356,6 @@
             </div>
 
             <div class="panel" role="tabpanel" id="panel-settings" aria-labelledby="tab-settings" hidden>
-              <section class="settings-card" aria-labelledby="setBand">
-                <h3 id="setBand">External audio device</h3>
-                <p class="settings-status"><span class="dot dot-off" id="bandDot"></span><strong id="bandStatus" role="status">Not checked yet</strong></p>
-                <p class="hint" id="bandDetail">Use your phone or browser microphone for voice input.</p>
-                <div class="row wrap">
-                  <button class="btn btn-primary btn-small" type="button" id="bandCheck">Check audio device</button>
-                  <button class="btn btn-small" type="button" id="bandListen">Go to the assistant</button>
-                </div>
-              </section>
-
               <section class="settings-card" aria-labelledby="setAccess">
                 <h3 id="setAccess">Access</h3>
                 <ul class="permissions">
@@ -413,14 +398,13 @@
                 <select id="micSource">
                   <option value="">This device (browser speech)</option>
                 </select>
-                <button class="link-inline" type="button" id="micRefresh">Find bracelet or other microphones</button>
+                <button class="link-inline" type="button" id="micRefresh">Find microphones</button>
               </div>
               <label class="toggle"><input type="checkbox" id="wakeToggle"><span>Only act when I say “Guide” first (for noisy rooms)</span></label>
               <label class="toggle"><input type="checkbox" id="hazardToggle" checked><span>Speak hazard warnings</span></label>
               <label class="toggle"><input type="checkbox" id="voiceToggle" checked><span>Speak replies</span></label>
               <button class="link-inline" type="button" id="voiceTest">Test assistant voice</button>
               <p class="hint" id="voiceState" role="status">Voice replies are on.</p>
-              <label class="toggle"><input type="checkbox" id="bargeToggle" checked><span>Let me interrupt the assistant through the band</span></label>
               <label class="toggle"><input type="checkbox" id="autoDescribe"><span>Tell me when the scene changes</span></label>
               <label class="toggle"><input type="checkbox" id="locationToggle"><span>Use my location for directions and memory</span></label>
               <label class="toggle"><input type="checkbox" id="autoRemember"><span>Remember what I see, every 20 seconds</span></label>
@@ -466,47 +450,9 @@
       <div class="section-head">
         <p class="eyebrow">Get the app</p>
         <h2 id="getTitle">GuideEye, built for your device.</h2>
-        <p id="downloadIntro">We’ll detect this device and put the right build first. You can always choose another platform.</p>
+        <p id="downloadIntro">Open GuideEye in your browser.</p>
       </div>
-      <div class="detected" id="detectedDownload" role="region" aria-live="polite" aria-label="Recommended download">
-        <div class="detected-icon" id="detectedIcon" aria-hidden="true"></div>
-        <div class="detected-copy">
-          <p class="download-kicker"><span class="dot"></span><span id="detectedLabel">Checking your device…</span></p>
-          <h3 id="detectedTitle">Finding the right GuideEye build</h3>
-          <p id="detectedDetail">This takes less than a second.</p>
-        </div>
-        <a class="btn btn-primary download-main" id="detectedButton" href="app.html">Open web app</a>
-      </div>
-
-      <div class="platform-grid" id="allDownloads" aria-label="All GuideEye downloads">
-        <article class="platform-card" data-platform="android">
-          <div class="platform-head"><span class="os-icon os-android" aria-hidden="true"></span><div><h3>Android</h3><p>Phone + browser microphone</p></div></div>
-          <a class="download-choice" href="https://github.com/zaf-07/GuideBand/releases/download/v0.1.0/GuideBand-Android.apk" download>
-            <span><strong>Download APK</strong><small>Android 8.0+ · 12.9 MB</small></span><b aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 4v11M7 10.5l5 5 5-5M5.5 19.5h13"/></svg></b>
-          </a>
-          <a class="alt-download" href="https://github.com/zaf-07/GuideBand/releases/download/v0.1.0/GuideBand-Android-debug.apk" download>Debug APK</a>
-        </article>
-        <article class="platform-card" data-platform="macos">
-          <div class="platform-head"><span class="os-icon os-apple" aria-hidden="true"></span><div><h3>macOS</h3><p>Apple silicon + Intel</p></div></div>
-          <a class="download-choice" href="https://github.com/zaf-07/GuideBand/releases/download/v0.1.0/GuideBand-0.1.0-universal.dmg" download>
-            <span><strong>Download DMG</strong><small>Universal · 203.8 MB</small></span><b aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 4v11M7 10.5l5 5 5-5M5.5 19.5h13"/></svg></b>
-          </a>
-          <a class="alt-download" href="https://github.com/zaf-07/GuideBand/releases/download/v0.1.0/GuideBand-0.1.0-universal-mac.zip" download>ZIP archive</a>
-        </article>
-        <article class="platform-card" data-platform="windows">
-          <div class="platform-head"><span class="os-icon os-windows" aria-hidden="true"></span><div><h3>Windows</h3><p>Windows 10 and later</p></div></div>
-          <a class="download-choice" href="https://github.com/zaf-07/GuideBand/releases/download/v0.1.0/GuideBand.Setup.0.1.0.exe" download>
-            <span><strong>Download EXE</strong><small>x64 setup · 102 MB</small></span><b aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 4v11M7 10.5l5 5 5-5M5.5 19.5h13"/></svg></b>
-          </a>
-          <a class="alt-download" href="https://github.com/zaf-07/GuideBand/releases/download/v0.1.0/GuideBand.0.1.0.exe" download>Portable EXE</a>
-        </article>
-        <article class="platform-card" data-platform="linux">
-          <div class="platform-head"><span class="os-icon os-linux" aria-hidden="true"></span><div><h3>Linux</h3><p>Debian, Ubuntu + others</p></div></div>
-          <a class="download-choice" href="https://github.com/zaf-07/GuideBand/releases/download/v0.1.0/guideband_0.1.0_amd64.deb" download>
-            <span><strong>Download DEB</strong><small>x64 · 90.4 MB</small></span><b aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 4v11M7 10.5l5 5 5-5M5.5 19.5h13"/></svg></b>
-          </a>
-          <a class="alt-download" href="https://github.com/zaf-07/GuideBand/releases/download/v0.1.0/GuideBand-0.1.0.AppImage" download>AppImage</a>
-        </article>
+      <div class="platform-grid" id="allDownloads" aria-label="GuideEye web app">
         <article class="platform-card platform-card-web" data-platform="web">
           <div class="platform-head"><span class="os-icon os-web" aria-hidden="true"></span><div><div class="title-with-tag"><h3>Web app</h3><span class="tag">Instant demo</span></div><p>Works in any modern browser · No installation needed</p></div></div>
           <a class="download-choice web-choice" href="app.html">
@@ -514,7 +460,6 @@
           </a>
         </article>
       </div>
-      <p class="release-note">GuideEye 0.1.0 · Early hackathon prototype. Desktop builds are unsigned, so your operating system may ask you to confirm before opening.</p>
       </div>
     </section>
   </main>
@@ -527,15 +472,15 @@
     <p>Built for The Big Hack Game · Assistive companion, not a mobility aid</p>
     <ul>
       <li><a href="app.html">Demo</a></li>
-      <li><a href="https://github.com/zaf-07/GuideBand" rel="noopener">GitHub</a></li>
-      <li><a href="https://github.com/zaf-07/GuideBand/blob/main/LICENSE" rel="noopener">MIT License</a></li>
+      <li><a href="https://github.com/zaf-07/GuideEye" rel="noopener">GitHub</a></li>
+      <li><a href="https://github.com/zaf-07/GuideEye/blob/main/LICENSE" rel="noopener">MIT License</a></li>
     </ul>
   </footer>
 
   <script src="api-config.js?v=1"></script>
-  <script src="landing.js?v=6"></script>
+  <script src="landing.js?v=7"></script>
   <script src="sign-motion.js?v=1"></script>
   <script src="signs.js?v=24"></script>
-  <script src="live.js?v=51"></script>
+  <script src="live.js?v=52"></script>
 </body>
 </html>

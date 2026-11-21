@@ -15,9 +15,8 @@ Copy each section below into the matching Devpost field.
 
 That takes the hand they need for a white cane or a guide dog. And the moment the app closes, it forgets everything it saw.
 
-Meanwhile a new wave of AI wearables is shipping with a microphone and a voice — but no eyes, and no thought for accessibility.
 
-So we built the missing layer. **GuideEye turns a Vexo wristband into your voice and a chest-clipped camera into your eyes.** It doesn't just describe the world. It **sees, remembers, and acts** — and it never acts without your spoken yes.
+GuideEye combines voice commands with a chest-clipped phone camera. It doesn't just describe the world. It **sees, remembers, and acts** — and it never acts without your spoken yes.
 
 ## What it does
 
@@ -56,8 +55,7 @@ GuideEye is **hybrid by design: anything safety-critical runs on the device, and
 
 | Layer | What we used | What it does |
 | --- | --- | --- |
-| **Wearable** | **Vexo Open Band**, official vexo-open-kit, Bluetooth LE | Captures 20 ms Opus audio frames from the wristband microphone |
-| **Speech in** | **Deepgram Nova-3** | Turns wristband audio into text |
+| **Speech in** | **Deepgram Nova-3** | Turns microphone audio into text |
 | **Reasoning** | **Google Gemini** | Describes scenes, reads text, answers from memory |
 | **Speech out** | **ElevenLabs**, Deepgram Aura | A natural voice for every reply |
 | **Payments** | **Stripe** | Real payments behind a spoken confirmation and a spending limit |
@@ -66,7 +64,7 @@ GuideEye is **hybrid by design: anything safety-critical runs on the device, and
 | **Maps** | OpenStreetMap | Addresses and walking routes |
 | **Platform** | FastAPI, SQLite, Electron | Backend, private memory, web app and a native macOS build |
 
-**The voice path:** wristband → Deepgram → the assistant → Gemini → a spoken reply.
+**The voice path:** microphone → Deepgram → the assistant → Gemini → a spoken reply.
 
 **The safety design, in three rules:**
 1. **Rules decide, not the model.** Whether a sentence is a payment — and whether you said yes — is decided by deterministic code, never by a language model.
@@ -75,9 +73,7 @@ GuideEye is **hybrid by design: anything safety-critical runs on the device, and
 
 ## Challenges we ran into
 
-- **Streaming audio off a wristband.** The band sends raw Opus packets over custom Bluetooth characteristics. Getting them to Deepgram without dropping 20 ms frames or stalling the event loop took real work.
 - **An assistant that must not guess.** A wrong answer is an inconvenience for most users and a hazard for ours. We moved every consequential decision out of the language model and into tested rules.
-- **A wristband with no vibration motor.** We discovered mid-build that the Vexo Open band cannot vibrate. Instead of dropping tactile feedback, we designed Micro-Whisper — directional audio cues, with vibration on the phone.
 - **Speech recognition in a loud hackathon hall.** Browser recognition often never decides a sentence has ended. We wrote our own end-of-sentence detection, plus a filter so the assistant stops hearing its own voice.
 - **Sign reading that was too slow.** Our first version sent frames to the cloud and took seconds. We rebuilt it to run on the device, and it became instant.
 
@@ -85,7 +81,7 @@ GuideEye is **hybrid by design: anything safety-critical runs on the device, and
 
 - **Five capabilities, one conversation.** See, Remember, Act, Navigate and Bridge all work together in a single live demo — you can ask what's ahead, pay for a coffee and message your family without touching anything.
 - **A real payment by voice.** A Stripe payment, triggered by speech, gated by a spoken yes, and capped by a limit.
-- **An end-to-end voice pipeline** from the wristband to a spoken answer.
+- **An end-to-end voice pipeline** from the microphone to a spoken answer.
 - **Privacy we can prove.** The memory stores text only, and one sentence erases it.
 - **Sign reading with no server.** It runs entirely in the browser.
 - **67 automated tests** covering payments, confirmations, memory and navigation — the parts that must never be wrong.
@@ -98,26 +94,24 @@ We also learned that the most impressive demo is not the most useful product. Sp
 
 ## What's next for GuideEye
 
-- **Every AI wearable.** GuideEye is built as a layer, not a device. Vexo is first; glasses and pins are next.
 - **A phone app for the chest camera**, for real outdoor navigation.
 - **A larger sign vocabulary**, built with Deaf signers rather than for them.
 - **Fully offline mode**, with vision models running on the phone.
 - **Public transit**: bus arrivals and station guidance.
 
-There are hundreds of millions of people with vision loss, and every new AI wearable ships without them in mind. GuideEye is how those devices become usable for them.
 
-*Prior work: GuideEye builds on ideas from our earlier project GuideLens and reuses its ASL fingerspelling model. Everything else was built at VexoHacks.*
+*Prior work: GuideEye builds on ideas from our earlier project GuideLens and reuses its ASL fingerspelling model.*
 
 ---
 
 ## Other Devpost fields
 
 **Built with** (tags):
-`python` `fastapi` `javascript` `google-gemini` `deepgram` `elevenlabs` `stripe` `vexo` `yolo` `mediapipe` `openstreetmap` `sqlite` `electron` `bluetooth-low-energy`
+`python` `fastapi` `javascript` `google-gemini` `deepgram` `elevenlabs` `stripe` `yolo` `mediapipe` `openstreetmap` `sqlite` `electron`
 
 **Try it out** (links):
-- Repository: https://github.com/zaf-07/GuideBand
-- Landing page: https://zaf-07.github.io/GuideBand/
+- Repository: https://github.com/zaf-07/GuideEye
+- Landing page: https://guideeye.onrender.com/
 
 The live demo on the landing page needs the local service running; setup is in `docs/RUN_DEMO.md`.
 
@@ -129,13 +123,12 @@ The live demo on the landing page needs the local service running; setup is in `
 - **Each sponsor has its own row** with a concrete job, so sponsor-prize judges find their technology in seconds.
 - **"Never acts without a spoken yes" appears in the tagline, the opening and the safety rules.** It is the one idea to be remembered for.
 - **The safety design is three numbered rules.** It answers the first question a judge asks about an AI that spends money.
-- **The closing paragraph is the business case:** a layer for every wearable, not one gadget.
 
 ## Before you submit — confirm these are true
 
 This text describes three things that were still being finished when it was written. Check each, or soften the sentence:
 
-1. **"The voice path: wristband → Deepgram → the assistant → Gemini → a spoken reply"** and **"An end-to-end voice pipeline from the wristband to a spoken answer."** The band script receives audio and transcribes it; confirm the transcript really reaches the assistant.
+1. **"The voice path: microphone → Deepgram → the assistant → Gemini → a spoken reply"** and **"An end-to-end voice pipeline from the microphone to a spoken answer."** Confirm the microphone transcript reaches the assistant.
 2. **"67 automated tests."** Re-run `python -m unittest discover -s backend/tests` and update the number if it changed.
 3. **"Sends it after the same spoken yes"** (WhatsApp). Automatic sending works on the Windows laptop through WhatsApp Desktop; on other machines the chat opens with the message ready.
 

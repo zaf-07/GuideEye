@@ -15,7 +15,7 @@ except ImportError:
 class ApiTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        with mock.patch.dict(os.environ, {'MEMORY_DB': ':memory:', 'BAND_AUTOCONNECT': 'false'}):
+        with mock.patch.dict(os.environ, {'MEMORY_DB': ':memory:'}):
             from backend.app import main
             cls.main = main
             cls.context = TestClient(main.app)
@@ -58,12 +58,6 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.json()['text'], 'hello')
         self.assertEqual(len(read.call_args.args[0]), 3)
 
-    def test_no_battery_is_reported_before_the_band_is_read(self):
-        body = self.client.get('/wearable/status').json()
-        self.assertFalse(body['connected'])
-        self.assertIsNone(body['battery'])
-        self.assertIsNone(body['firmware'])
-
     def test_payment_needs_a_spoken_yes(self):
         quote = self.client.post('/assistant', data={'text': 'Buy me a coffee', 'session': 'api-pay'}).json()
         self.assertEqual(quote['intent'], 'pay_quote')
@@ -85,13 +79,6 @@ class ApiTests(unittest.TestCase):
 
     def test_qr_code_rejects_bad_amounts(self):
         self.assertEqual(self.client.get('/pay/qr.png', params={'amount': 0}).status_code, 422)
-
-    def test_listen_without_the_kit_explains_what_to_install(self):
-        if self.main.BAND_KIT.is_dir():
-            self.skipTest('The Vexo kit is installed; this would use the real band')
-        response = self.client.post('/wearable/listen', json={'seconds': 1})
-        self.assertEqual(response.status_code, 503)
-        self.assertNotIn('ModuleNotFoundError', response.json()['detail'])
 
     def test_events_socket_acknowledges_and_closes_cleanly(self):
         with self.client.websocket_connect('/events') as socket:

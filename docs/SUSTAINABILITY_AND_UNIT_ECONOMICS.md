@@ -50,7 +50,7 @@ GuideEye operates on a tiered B2C freemium and B2B campus/enterprise license mod
 - Deployed across university Offices of Accessible Education (OAE), assisted living networks, and vocational rehabilitation centers.
 - Shared Sight campus memory integration (hazard mapping across campus buildings).
 - FERPA / HIPAA-isolated private server instances.
-- Dedicated onboarding support and hardware wristband kits.
+- Dedicated onboarding support .
 - *Gross Margin:* **78.4%** ($49.00 revenue minus $10.58 enterprise support & compute cost).
 
 ---
@@ -72,7 +72,7 @@ State Vocational Rehabilitation & Foundation Partnerships
 
 [Phase 3: Q3–Q4 2027]
 Hardware Bundles & Insurance / Grant Reimbursement
-- Bundle pre-configured BLE wristband and chest clip mounts.
+- Bundle chest clip mounts.
 - Seek Medicaid / Medicare Assistive Device reimbursement coding (HCPCS).
 - Scale enterprise deployments to 50+ universities nationwide.
 ```
@@ -83,4 +83,4 @@ Hardware Bundles & Insurance / Grant Reimbursement
 
 1. **Defensibility:** Hybrid edge-first architecture means GuideEye does not collapse under cloud API rate limits or network dropouts. Core safety features run offline forever.
 2. **Data Privacy moat:** By storing text notes rather than raw video, GuideEye avoids expensive visual storage infrastructure and eliminates privacy/regulatory compliance hurdles.
-3. **Ecosystem Leverage:** Utilizing the Universal Harness Protocol (UHP) allows GuideEye to seamlessly upgrade or substitute backend foundation models without breaking wearable client contracts.
+3. **Ecosystem Leverage:** Utilizing the Universal Harness Protocol (UHP) allows GuideEye to seamlessly upgrade or substitute backend foundation models without breaking mobile client contracts.

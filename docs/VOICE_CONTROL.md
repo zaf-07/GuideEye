@@ -64,7 +64,6 @@ EXPO_PUBLIC_API_URL=http://<mac-lan-ip>:8000 npx expo run:ios --device
 | Home address setting | Yes, Settings |
 | Memory of what was seen, every 20 seconds | Yes, while the camera screen is open (off when "Keep memory on this device" is on) |
 | Bridge: sign to speech, speech to text | Yes, Bridge and Translate screens |
-| Vexo band microphone | Not in the iPhone app |
 
 ## Known limits
 
