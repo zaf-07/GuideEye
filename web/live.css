@@ -136,6 +136,8 @@
 /* Fingerspelling wraps by word and never leaves its box */
 .spell { flex-wrap: wrap; overflow-x: hidden; overflow-y: auto; max-height: 260px; gap: 10px 18px; }
 .spell-word { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+.bridge-avatar { margin-top: 14px; }
+.bridge-avatar iframe { display: block; width: min(100%, 420px); aspect-ratio: 6 / 5; max-height: 350px; border: 0; border-radius: 12px; background: #17151c; }
 .live-side, .panel, .panel > div { min-width: 0; }
 .bridge-caption { overflow-wrap: anywhere; }
 

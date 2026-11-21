@@ -11,7 +11,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:ital,wght@0,400..700;1,400..700&display=swap">
   <link rel="stylesheet" href="landing.css?v=7">
-  <link rel="stylesheet" href="live.css?v=26">
+  <link rel="stylesheet" href="live.css?v=27">
   <title>GuideEye — The AI that sees, remembers and acts for you</title>
 </head>
 <body>
@@ -324,6 +324,11 @@
                 </div>
                 <p class="bridge-caption" id="bridgeCaption" aria-live="polite">What you say appears here in large text.</p>
                 <div class="spell" id="spellOut" aria-hidden="true"></div>
+                <div class="bridge-avatar">
+                  <button class="btn btn-small" id="bridgeAvatarPlay" type="button" disabled>Play 3D signs</button>
+                  <p class="hint" id="bridgeAvatarStatus" role="status">Playing sends the caption to three.ws.</p>
+                  <div id="bridgeAvatarStage"></div>
+                </div>
               </div>
               <form class="ask" id="speakForm">
                 <label class="visually-hidden" for="speakInput">Type something to say aloud</label>
@@ -531,6 +536,6 @@
   <script src="landing.js?v=6"></script>
   <script src="sign-motion.js?v=1"></script>
   <script src="signs.js?v=24"></script>
-  <script src="live.js?v=50"></script>
+  <script src="live.js?v=51"></script>
 </body>
 </html>

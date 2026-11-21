@@ -346,6 +346,48 @@
 
     const bridgeListenBtn = $('#bridgeListenBtn');
     const bridgeCaption = $('#bridgeCaption');
+    const signerStage = $('#pwaSignerStage');
+    const signerStatus = $('#pwaSignerStatus');
+    const signerPlay = $('#pwaSignerPlay');
+    let signerTimer;
+    let signerAttempt = 0;
+    if (signerStage && signerStatus && signerPlay) {
+      signerPlay.onclick = async () => {
+        const caption = bridgeCaption?.textContent.trim() || $('#bridgeInput').value.trim();
+        if (!caption) return;
+        const attempt = ++signerAttempt;
+        clearTimeout(signerTimer);
+        signerStatus.textContent = 'Loading avatar and signs…';
+        try {
+          const { signerDocument } = await import('./signer-document.js');
+          if (attempt !== signerAttempt || !bridgeDialog.open) return;
+          const frame = document.createElement('iframe');
+          frame.title = '3D sign language avatar';
+          frame.setAttribute('sandbox', 'allow-scripts');
+          frame.style.cssText = 'display:block;width:100%;aspect-ratio:6/5;max-height:300px;border:0;border-radius:12px;background:#17151c';
+          frame.srcdoc = signerDocument(caption);
+          signerStage.replaceChildren(frame);
+          signerPlay.textContent = 'Replay signs';
+          signerTimer = setTimeout(() => { signerStatus.textContent = 'The avatar did not load. Try Replay signs.'; }, 30000);
+        } catch {
+          signerStatus.textContent = 'The avatar could not load.';
+        }
+      };
+      window.addEventListener('message', event => {
+        if (event.source !== signerStage.querySelector('iframe')?.contentWindow || event.data?.source !== 'guideeye-signer') return;
+        const labels = { playing: 'Signing…', finished: 'Playback finished.', error: 'The avatar could not play. Try Replay signs.' };
+        if (!Object.hasOwn(labels, event.data.type)) return;
+        clearTimeout(signerTimer);
+        signerStatus.textContent = labels[event.data.type];
+      });
+      bridgeDialog.addEventListener('close', () => {
+        signerAttempt++;
+        clearTimeout(signerTimer);
+        signerStage.replaceChildren();
+        signerPlay.textContent = 'Play 3D signs';
+        signerStatus.textContent = 'Playing sends the caption to three.ws.';
+      });
+    }
     let bridgeRecognizer = null;
     let bridgeCaptionsOn = false;
 

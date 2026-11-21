@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Linking, Platform, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { Button } from '../src/components';
-import { signerDocument } from './signerDocument';
+import { signerDocument } from '../../../web/signer-document';
 
 type PlaybackState = 'idle' | 'loading' | 'playing' | 'finished' | 'error';
 
@@ -20,10 +20,7 @@ export default function DigitalSigner({ text }: { text: string }) {
   }, [state]);
 
   const play = () => {
-    if (Platform.OS === 'web') {
-      void Linking.openURL(`https://three.ws/sign-language?say=${encodeURIComponent(text.trim())}`)
-        .catch(() => setState('error'));
-    } else if (showPlayer) {
+    if (showPlayer) {
       viewer.current?.injectJavaScript('window.guideEyeReplay?.(); true;');
     } else {
       setAttempt((value) => value + 1);

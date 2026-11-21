@@ -1,4 +1,4 @@
-export function signerDocument(text: string) {
+export function signerDocument(text) {
   const caption = JSON.stringify(text.trim()).replace(/</g, '\\u003c');
   return `<!doctype html>
 <html lang="en"><head>
@@ -10,7 +10,10 @@ canvas{display:block;width:100%;height:100%}
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"}}</script>
 </head><body><div id="stage"></div>
 <script type="module">
-const report = (type, detail) => window.ReactNativeWebView?.postMessage(JSON.stringify({type,detail}));
+const report = (type, detail) => {
+  if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify({type,detail}));
+  else if (window.parent !== window) window.parent.postMessage({source:'guideeye-signer',type}, '*');
+};
 try {
   const text = ${caption};
   const [THREE, {GLTFLoader}, {MeshoptDecoder}, retarget] = await Promise.all([

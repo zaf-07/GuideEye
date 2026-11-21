@@ -1168,8 +1168,51 @@
       el('facingBtn').textContent = 'Show them — big view';
     }
   });
+  let avatarCaption = '';
+  let avatarTimer;
+  const avatarPlay = el('bridgeAvatarPlay');
+  const avatarStage = el('bridgeAvatarStage');
+  const avatarStatus = el('bridgeAvatarStatus');
+  if (avatarPlay && avatarStage && avatarStatus) {
+    avatarPlay.onclick = async () => {
+      const caption = avatarCaption;
+      if (!caption) return;
+      avatarStatus.textContent = 'Loading avatar and signs…';
+      try {
+        const { signerDocument } = await import('./signer-document.js');
+        if (caption !== avatarCaption) return;
+        const frame = document.createElement('iframe');
+        frame.title = '3D sign language avatar';
+        frame.setAttribute('sandbox', 'allow-scripts');
+        frame.srcdoc = signerDocument(caption);
+        avatarStage.replaceChildren(frame);
+        avatarPlay.textContent = 'Replay signs';
+        clearTimeout(avatarTimer);
+        avatarTimer = setTimeout(() => {
+          avatarStatus.textContent = 'The avatar did not load. Try Replay signs.';
+        }, 30000);
+      } catch {
+        avatarStatus.textContent = 'The avatar could not load. The text and sign cards are still available.';
+      }
+    };
+    window.addEventListener('message', event => {
+      if (event.source !== avatarStage.querySelector('iframe')?.contentWindow || event.data?.source !== 'guideeye-signer') return;
+      const labels = { playing: 'Signing…', finished: 'Playback finished.', error: 'The avatar could not play. Try Replay signs.' };
+      if (!Object.hasOwn(labels, event.data.type)) return;
+      clearTimeout(avatarTimer);
+      avatarStatus.textContent = labels[event.data.type];
+    });
+  }
   function showSpeech(text) {
     el('bridgeCaption').textContent = text;
+    if (avatarPlay && avatarStage && avatarStatus && text !== avatarCaption) {
+      avatarCaption = text.trim();
+      clearTimeout(avatarTimer);
+      avatarStage.replaceChildren();
+      avatarPlay.textContent = 'Play 3D signs';
+      avatarPlay.disabled = !avatarCaption;
+      avatarStatus.textContent = 'Playing sends the caption to three.ws.';
+    }
     fingerspell(text);
   }
   el('speakForm').onsubmit = e => {
