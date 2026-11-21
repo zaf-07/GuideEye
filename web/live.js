@@ -994,7 +994,7 @@
           recorder.start();
           micState('Hearing you through ' + sourceName() + '…', 'on');
         }
-      } else if (recorder && (now - lastLoudAt > 900 || now - startedAt > 15000)) {
+      } else if (recorder && (now - lastLoudAt > SPEECH_PAUSE_MS || now - startedAt > 15000)) {
         const finished = recorder, spoke = lastLoudAt - startedAt;
         recorder = null;
         finished.onstop = () => { if (spoke > 350) sendClip(new Blob(chunks, { type: finished.mimeType })); };
