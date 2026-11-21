@@ -440,6 +440,15 @@ export function SettingsScreen() {
       ) : null}
 
       <GlassCard>
+        <Text variant="section">ASL Sign Studio</Text>
+        <View style={styles.chips}>
+          <Chip label="Skeleton hands + text" active={!profile.signStudioFormat || profile.signStudioFormat === 'avatar'} onPress={() => patch({ signStudioFormat: 'avatar' })} />
+          <Chip label="Sign cards + text" active={profile.signStudioFormat === 'cards'} onPress={() => patch({ signStudioFormat: 'cards' })} />
+          <Chip label="3D avatar + text" active={profile.signStudioFormat === 'digital'} onPress={() => patch({ signStudioFormat: 'digital' })} />
+        </View>
+      </GlassCard>
+
+      <GlassCard>
         <Row
           title="Haptic feedback"
           caption="Pulses that get faster as objects get closer."

@@ -30,9 +30,33 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(body['status'], 'ok')
         self.assertFalse(body['raw_media_storage'])
 
+    def test_automatic_scene_description_can_classify_without_detector_hints(self):
+        detections = [{'label': 'cell phone', 'position': 'left', 'confidence': 0.8, 'box': [0, 0, 0.2, 0.2]}]
+        answer = {'text': 'A shoe is on the left.', 'provider': 'gemini', 'failed_providers': []}
+        with mock.patch.object(self.main, 'detect', return_value=detections), \
+             mock.patch.object(self.main.memory, 'record_detections'), \
+             mock.patch.object(self.main.vision, 'hazard_warnings', return_value=[]), \
+             mock.patch.object(self.main.vision, 'describe', return_value=answer) as describe:
+            response = self.client.post('/vision/analyze', data={'use_detector_hints': 'false'},
+                                        files={'image': ('frame.jpg', b'frame', 'image/jpeg')})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['description'], answer['text'])
+        self.assertEqual(response.json()['detections'], detections)
+        self.assertEqual(describe.call_args.args[3], [])
+
     def test_web_app_is_served(self):
         self.assertEqual(self.client.get('/').status_code, 200)
         self.assertEqual(self.client.get('/app.html').status_code, 200)
+
+    def test_bridge_sign_accepts_three_camera_frames_and_returns_the_decoded_turn(self):
+        with mock.patch.object(self.main.llm, 'configured', return_value=True), \
+             mock.patch.object(self.main.bridge, 'read_sign', return_value={'text': 'hello', 'confidence': 0.95}) as read:
+            response = self.client.post('/bridge/sign', files=[
+                ('images', (f'frame-{index}.jpg', b'frame', 'image/jpeg')) for index in range(3)
+            ])
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['text'], 'hello')
+        self.assertEqual(len(read.call_args.args[0]), 3)
 
     def test_no_battery_is_reported_before_the_band_is_read(self):
         body = self.client.get('/wearable/status').json()

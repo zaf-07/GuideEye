@@ -136,6 +136,13 @@ const VISUAL = new RegExp(
 );
 
 /** True when the request is about what the camera is looking at. */
+function isObjectSearch(text: string): boolean {
+  const request = text.trim();
+  const explicit = /^(?:please\s+)?(?:look for|find|locate|can you see|where(?:'s| is| are))\s+(.+?)\s+(?:in (?:the |this |my )?(?:camera(?: view)?|frame)|in view)[.!?]*$/i.exec(request);
+  const fixture = /^(?:please\s+)?(?:look for|find|locate|can you see|where(?:'s| is| are))\s+((?:(?:a|an|the|any)\s+)?(?:doors?|doorways?|stairs|staircase|light switches?|outlets?|sockets?))[.!?]*$/i.exec(request);
+  return Boolean(explicit ?? fixture);
+}
+
 export function needsCamera(text: string) {
-  return VISUAL.test(text.trim());
+  return isObjectSearch(text) || VISUAL.test(text.trim());
 }

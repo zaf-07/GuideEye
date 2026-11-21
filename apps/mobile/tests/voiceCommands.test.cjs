@@ -48,6 +48,8 @@ test('assistant requests are not swallowed by screen commands', () => {
 
 test('delayed requests', () => {
   assert.deepStrictEqual(voice.parseDelay('in 15 minutes take me home'), { seconds: 900, command: 'take me home' });
+  const safeway = voice.extractCommand("Guide, I'm going to Safeway in fifteen minutes");
+  assert.deepStrictEqual(voice.parseDelay(safeway.text), { seconds: 900, command: 'take me to Safeway' });
   assert.deepStrictEqual(voice.parseDelay("in fifteen minutes we're going home"), { seconds: 900, command: "we're going home" });
   assert.deepStrictEqual(voice.parseDelay('take me to Safeway in twenty five minutes'), { seconds: 1500, command: 'take me to Safeway' });
   assert.deepStrictEqual(voice.parseDelay('in half an hour text Tom I am home'), { seconds: 1800, command: 'text Tom I am home' });
@@ -75,6 +77,8 @@ test('numbers and spoken delays', () => {
 const frame = loadTs('src/voice/frame.ts');
 
 test('requests about what the camera sees ask for a frame', () => {
+  assert.strictEqual(frame.needsCamera('Where is the door?'), true);
+  assert.strictEqual(frame.needsCamera('Find my keys in the camera view'), true);
   for (const text of ["what's in front of me", 'Read the text', 'remember this', 'pay this', 'pay', 'what is this', 'explain this letter', 'what does this say']) {
     assert.strictEqual(frame.needsCamera(text), true, text);
   }

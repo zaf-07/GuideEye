@@ -16,6 +16,7 @@ import {
   interpolatePose,
 } from '../src/aslSignPoses';
 import type { ASLToken } from '../src/aslGlossTranslator';
+import SignPoseView from './SignPoseView';
 
 export type SignPlayerProps = {
   tokens: ASLToken[];
@@ -197,6 +198,7 @@ export default function SignPlayer({
   const [playbackSpeed, setPlaybackSpeed] = useState<0.5 | 0.75 | 1.0 | 1.25>(1.0);
   const [isLooping, setIsLooping] = useState(true);
   const [viewMode, setViewMode] = useState<'3d' | 'skeleton'>(initialMode);
+  const [nativeFrame, setNativeFrame] = useState<{ pose: HandPose; secondary?: HandPose }>({ pose: REST_POSE });
 
   // 3D Orbit Drag Rotation State
   const [orbitRot, setOrbitRot] = useState({ x: 0, y: 0 });
@@ -494,6 +496,7 @@ export default function SignPlayer({
     // Paced slightly slower (~30%) for clear, deliberate human sign perception
     stateRef.current.keyframeDuration = ((keyframes[0].durationMs || 420) * 1.30) / playbackSpeed;
 
+    let lastNativeFrame = -Infinity;
     const render = (now: number) => {
       const elapsed = now - stateRef.current.startTime;
       const duration = stateRef.current.keyframeDuration;
@@ -505,7 +508,10 @@ export default function SignPlayer({
         ? interpolatePose(secStart!, stateRef.current.targetSecondary, t)
         : undefined;
 
-      if (viewMode === '3d' && threeRef.current) {
+      if (Platform.OS !== 'web' && now - lastNativeFrame >= 40) {
+        lastNativeFrame = now;
+        setNativeFrame({ pose: activePose, secondary: activeSecondary });
+      } else if (viewMode === '3d' && threeRef.current) {
         const {
           renderer,
           scene,
@@ -583,7 +589,17 @@ export default function SignPlayer({
           } else {
             onSignComplete?.();
             if (isLooping) {
-              setTokenIndex(0);
+              if (tokens.length === 1) {
+                stateRef.current.keyframeIdx = 0;
+                stateRef.current.currentPose = stateRef.current.targetPose;
+                stateRef.current.targetPose = keyframes[0].landmarks;
+                stateRef.current.currentSecondary = stateRef.current.targetSecondary;
+                stateRef.current.targetSecondary = keyframes[0].secondaryLandmarks;
+                stateRef.current.keyframeDuration = keyframes[0].durationMs * 1.30 / playbackSpeed;
+                stateRef.current.startTime = now;
+              } else {
+                setTokenIndex(0);
+              }
             } else {
               setIsPlaying(false);
             }
@@ -681,7 +697,10 @@ export default function SignPlayer({
           />
         ) : (
           <View style={styles.fallbackRig}>
-            <Ionicons name="hand-left" size={64} color="#B7FF56" />
+            <View style={{ flexDirection: 'row' }}>
+              {nativeFrame.secondary && <SignPoseView pose={nativeFrame.secondary} size={110} color="#00E5FF" />}
+              <SignPoseView pose={nativeFrame.pose} size={nativeFrame.secondary ? 110 : 160} />
+            </View>
           </View>
         )}
 
@@ -699,7 +718,7 @@ export default function SignPlayer({
             </View>
 
             {/* View Mode Switcher: True 3D WebGL PBR vs X-Ray */}
-            <View style={styles.modePillGroup}>
+            {Platform.OS === 'web' && <View style={styles.modePillGroup}>
               <Pressable
                 onPress={() => setViewMode('3d')}
                 style={[styles.viewModeToggle, viewMode === '3d' && styles.viewModeToggleActive]}
@@ -741,7 +760,7 @@ export default function SignPlayer({
                   X-Ray
                 </Text>
               </Pressable>
-            </View>
+            </View>}
           </View>
 
           <Text style={styles.glossTitle}>{activeToken.gloss}</Text>
@@ -750,7 +769,7 @@ export default function SignPlayer({
           </Text>
 
           {/* Interactive 3D Orbit Drag Hint */}
-          {viewMode === '3d' && (
+          {Platform.OS === 'web' && viewMode === '3d' && (
             <Pressable onPress={resetOrbit} style={styles.dragHintRow}>
               <Ionicons name="sync-outline" size={12} color="#8EA49B" />
               <Text style={styles.dragHintText}>

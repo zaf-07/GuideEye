@@ -157,8 +157,9 @@ export class PeerLink {
   }
 
   found(peer: string) {
-    if (this.peer || peer === this.me || (this.cooldown.get(peer) ?? 0) > this.now()) return;
-    if (this.me < peer) this.transport.invite(peer);
+    if (this.peer || this.me >= peer || (this.cooldown.get(peer) ?? 0) > this.now()) return false;
+    this.transport.invite(peer);
+    return true;
   }
 
   connected(peer: string) {

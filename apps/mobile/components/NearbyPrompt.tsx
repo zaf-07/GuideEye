@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { Modal, Pressable, StyleSheet, View } from 'react-native';
-import { router, usePathname } from 'expo-router';
+import { router, useGlobalSearchParams, usePathname } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { Button, Text } from '../src/components';
@@ -19,6 +19,7 @@ const LISTEN_AFTER_MS = 6500;
 export function NearbyPrompt() {
   const { profile, ready, onboarded } = useProfile();
   const pathname = usePathname();
+  const { code } = useGlobalSearchParams<{ code?: string }>();
   const role = roleForImpairments(profile.impairments);
   const enabled = ready && onboarded && Boolean(profile.nearbyDiscovery) && role !== null;
   // Keep Multipeer alive while Bridge is open: the peer session is the actual
@@ -26,7 +27,7 @@ export function NearbyPrompt() {
   // the two phones immediately after both people accepted.
   const paused = pathname.startsWith('/onboarding');
   // A conversation is already open: do not offer another one on top of it.
-  const inConversation = pathname.startsWith('/bridge');
+  const inConversation = pathname.startsWith('/bridge') && Boolean(code);
   const { offer, match, accept, decline, clearMatch } = useNearby(enabled, role, paused, inConversation);
   const { handsFree } = useVoice();
   const handsFreeRef = useRef(handsFree);

@@ -19,6 +19,7 @@ import HandTracker, { type SignContextState } from '../components/HandTracker';
 import { HandTracker as NativeHandTracker, hasNativeHandTracking } from '../modules/guideeye-hands';
 import { useNativeHands } from '../src/useNativeHands';
 import SignPlayer from '../components/SignPlayer';
+import FingerspellingCards from '../components/FingerspellingCards';
 import { translateEnglishToASLGloss } from '../src/aslGlossTranslator';
 import {
   BridgeGoneError,
@@ -37,7 +38,7 @@ import {
 } from '../src/campusMemory';
 import { rememberConversationTurn } from '../src/memory/capture';
 import { useProfile } from '../src/state/ProfileContext';
-import { useVisionLoop } from '../src/vision';
+import { hasVisionBackend, useVisionLoop } from '../src/vision';
 
 const QUICK_DEAF_SIGNS = [
   'THANK YOU',
@@ -118,14 +119,16 @@ export default function DeafBlindBridgeScreen() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [spelled, setSpelled] = useState('');
   const [cameraFacing, setCameraFacing] = useState<'front' | 'back'>('front');
+  const [partnerCamera, setPartnerCamera] = useState(false);
   const [isListeningMic, setIsListeningMic] = useState(false);
   const [interimCaption, setInterimCaption] = useState('');
+  const micOwned = useRef(false);
   const cameraRef = useRef<CameraView>(null);
-  const nativeDeafRole = Platform.OS !== 'web' && (role === 'deaf' || role === 'both');
+  const nativeDeafRole = Platform.OS !== 'web' && (role === 'deaf' || role === 'both' || (role === 'blind' && partnerCamera));
   const { result: nativeSignResult, state: nativeSignState } = useVisionLoop(
     cameraRef,
     'sign',
-    Boolean(code && nativeDeafRole && permission?.granted && bridgeServerConfigured()),
+    Boolean(code && nativeDeafRole && permission?.granted && hasVisionBackend()),
   );
 
   const roleRef = useRef(role);
@@ -140,7 +143,7 @@ export default function DeafBlindBridgeScreen() {
   // Partner state already announced, so joining an occupied room is not said twice.
   const previousPartner = useRef(false);
   const signCount = useRef(0);
-  const autoJoinTried = useRef(false);
+  const autoJoinTried = useRef<string | null>(null);
   const aslEngineRef = useRef<{ backspace: () => string; addSpace: () => string; clearText: () => void } | null>(null);
   const scrollViewRef = useRef<{ scrollToEnd: (options?: { animated?: boolean }) => void } | null>(null);
 
@@ -241,20 +244,28 @@ export default function DeafBlindBridgeScreen() {
 
   // A shared link (/bridge?code=123456&role=blind) joins straight away.
   useEffect(() => {
-    if (autoJoinTried.current || code) return;
-    autoJoinTried.current = true;
     const linkRole = parseRole(params.role);
-    if (linkRole && isBridgeCode(params.code)) void join(linkRole, params.code);
+    if (!isBridgeCode(params.code)) {
+      autoJoinTried.current = null;
+      return;
+    }
+    if (!code && linkRole && autoJoinTried.current !== params.code) {
+      autoJoinTried.current = params.code;
+      void join(linkRole, params.code);
+    }
   }, [code, join, params.code, params.role]);
 
   const leave = () => {
     Speech.stop();
+    if (micOwned.current) ExpoSpeechRecognitionModule.abort();
+    micOwned.current = false;
+    setPartnerCamera(false);
     setCode(null);
     setMessages([]);
     setSync('local');
     setPartnerJoined(false);
     setJoinInput('');
-    router.setParams({ code: undefined, role: undefined } as never);
+    router.setParams({ code: '', role: '' });
   };
 
   // Live refresh: send anything queued, then fetch only what is new.
@@ -270,8 +281,9 @@ export default function DeafBlindBridgeScreen() {
         const after = firstFetch ? undefined : lastServerId(messagesRef.current) || undefined;
         const incoming = await fetchBridgeMessages(code, after);
         if (cancelled) return;
-        // History that was already there when this device opened is not re-announced.
-        receive(incoming, !firstFetch);
+        // The local history is already marked handled by enter(). A partner
+        // can send a new turn before this first refresh finishes.
+        receive(incoming, true);
         firstFetch = false;
         // Check every refresh until the partner arrives, then only now and then.
         if (!partnerRef.current || polls % STATUS_EVERY_POLLS === 0) {
@@ -318,6 +330,10 @@ export default function DeafBlindBridgeScreen() {
     const phrase = text.trim();
     if (!phrase) return;
     // The listener is at this device only when both people share it.
+    if (roleRef.current === 'blind') {
+      speak(phrase);
+      return;
+    }
     if (roleRef.current === 'both') speak(phrase);
     void send('deaf', phrase);
   }, [speak]);
@@ -338,12 +354,16 @@ export default function DeafBlindBridgeScreen() {
     void send('blind', text);
   };
 
-  useSpeechRecognitionEvent('start', () => setIsListeningMic(true));
+  useSpeechRecognitionEvent('start', () => { if (micOwned.current) setIsListeningMic(true); });
   useSpeechRecognitionEvent('end', () => {
+    if (!micOwned.current) return;
+    micOwned.current = false;
     setIsListeningMic(false);
     setInterimCaption('');
   });
   useSpeechRecognitionEvent('error', (event) => {
+    if (!micOwned.current) return;
+    micOwned.current = false;
     setIsListeningMic(false);
     setInterimCaption('');
     if (event.error !== 'aborted' && event.error !== 'no-speech') {
@@ -351,6 +371,7 @@ export default function DeafBlindBridgeScreen() {
     }
   });
   useSpeechRecognitionEvent('result', (event) => {
+    if (!micOwned.current || !codeRef.current || roleRef.current === 'deaf') return;
     const transcript = event.results[0]?.transcript?.trim() ?? '';
     if (!event.isFinal) {
       if (transcript) setInterimCaption(transcript);
@@ -359,6 +380,10 @@ export default function DeafBlindBridgeScreen() {
     setInterimCaption('');
     if (transcript) handleBlindReply(transcript);
   });
+  useEffect(() => () => {
+    if (micOwned.current) ExpoSpeechRecognitionModule.abort();
+    micOwned.current = false;
+  }, []);
 
   const handleContextChange = (state: SignContextState) => {
     setSpelled(state.aslState?.spelledText?.trim() ?? '');
@@ -416,8 +441,11 @@ export default function DeafBlindBridgeScreen() {
         setSetupError('Microphone and speech-recognition permission are needed for voice replies.');
         return;
       }
+      if (!codeRef.current) return;
+      micOwned.current = true;
       ExpoSpeechRecognitionModule.start({ lang: 'en-US', interimResults: true, continuous: false });
     } catch {
+      micOwned.current = false;
       setIsListeningMic(false);
       setSetupError('Voice reply could not start. Use a quick reply or type your message.');
     }
@@ -578,6 +606,7 @@ export default function DeafBlindBridgeScreen() {
         {pendingCount > 0 && sync !== 'ended' && (
           <Text style={s.pendingNote}>{pendingCount} message{pendingCount === 1 ? '' : 's'} waiting to send…</Text>
         )}
+        {setupError ? <Text style={s.errorText} accessibilityLiveRegion="polite">{setupError}</Text> : null}
 
         {showDeaf && (
           <View style={s.panelDeaf}>
@@ -622,7 +651,7 @@ export default function DeafBlindBridgeScreen() {
                       ? nativeHands.handCount > 0
                         ? `Reading ${nativeHands.handCount === 1 ? 'your hand' : 'both hands'} — keep signing`
                         : 'Show your hands to start signing'
-                      : !bridgeServerConfigured() || nativeSignState === 'offline'
+                      : !hasVisionBackend() || nativeSignState === 'offline'
                         ? 'Sign decoding needs the GuideEye server. Use a quick sign or type:'
                         : 'Reading your signed phrase… or use a quick sign:'}
                 </Text>
@@ -711,7 +740,7 @@ export default function DeafBlindBridgeScreen() {
                       onPress={() => setDisplayMode('both')}
                       style={[s.outputModeBtn, displayMode === 'both' && s.outputModeBtnActive]}
                     >
-                      <Text style={[s.outputModeBtnText, displayMode === 'both' && s.outputModeBtnTextActive]}>Both</Text>
+                      <Text style={[s.outputModeBtnText, displayMode === 'both' && s.outputModeBtnTextActive]}>Text + cards</Text>
                     </Pressable>
                   </View>
                 </View>
@@ -733,7 +762,8 @@ export default function DeafBlindBridgeScreen() {
                     </Text>
                   )
                 )}
-                {(displayMode === 'avatar' || displayMode === 'both') && lastBlindAsl && lastBlindAsl.tokens.length > 0 && (
+                {displayMode === 'both' && lastBlind && <FingerspellingCards text={lastBlind.text} />}
+                {displayMode === 'avatar' && lastBlindAsl && lastBlindAsl.tokens.length > 0 && (
                   <View style={s.bridgeSignPlayerBox}>
                     <View style={s.bridgeSignPlayerTitleRow}>
                       <Ionicons name="hand-left" size={13} color="#C8FF72" />
@@ -770,6 +800,28 @@ export default function DeafBlindBridgeScreen() {
             </View>
 
             {role === 'blind' && (
+              <View>
+              {Platform.OS !== 'web' && (
+                <>
+                  <Pressable style={s.secondaryBtn} accessibilityRole="button" onPress={() => {
+                    setPartnerCamera((open) => !open);
+                    if (!permission?.granted) void requestPermission();
+                  }}>
+                    <Text style={s.secondaryBtnText}>{partnerCamera ? 'Close sign camera' : 'Read partner signs with rear camera'}</Text>
+                  </Pressable>
+                  {partnerCamera && permission?.granted && (
+                    <View style={s.cameraCard}>
+                      {nativeTracking ? (
+                        <NativeHandTracker style={StyleSheet.absoluteFill} active facing="back" maxHands={2}
+                          frameRate={20} onHands={nativeHands.onHands} />
+                      ) : <CameraView ref={cameraRef} facing="back" style={StyleSheet.absoluteFill} animateShutter={false} />}
+                    </View>
+                  )}
+                  {partnerCamera && !nativeTracking && (!hasVisionBackend() || nativeSignState === 'offline') && (
+                    <Text style={s.errorText} accessibilityLiveRegion="polite">Sign camera needs the GuideEye server on this build.</Text>
+                  )}
+                </>
+              )}
               <Pressable
                 style={s.heardCard}
                 onPress={() => lastDeaf && speak(lastDeaf.text)}
@@ -779,6 +831,7 @@ export default function DeafBlindBridgeScreen() {
                 <Text style={s.giantTextLabel}>YOUR PARTNER SIGNED (TAP TO REPEAT):</Text>
                 <Text style={s.heardText}>{lastDeaf ? lastDeaf.text : 'Waiting for your partner…'}</Text>
               </Pressable>
+              </View>
             )}
 
             {role === 'both' && (
@@ -804,7 +857,7 @@ export default function DeafBlindBridgeScreen() {
                       onPress={() => setDisplayMode('both')}
                       style={[s.outputModeBtn, displayMode === 'both' && s.outputModeBtnActive]}
                     >
-                      <Text style={[s.outputModeBtnText, displayMode === 'both' && s.outputModeBtnTextActive]}>Both</Text>
+                      <Text style={[s.outputModeBtnText, displayMode === 'both' && s.outputModeBtnTextActive]}>Text + cards</Text>
                     </Pressable>
                   </View>
                 </View>
@@ -826,7 +879,8 @@ export default function DeafBlindBridgeScreen() {
                     </Text>
                   )
                 )}
-                {(displayMode === 'avatar' || displayMode === 'both') && lastBlindAsl && lastBlindAsl.tokens.length > 0 && (
+                {displayMode === 'both' && lastBlind && <FingerspellingCards text={lastBlind.text} />}
+                {displayMode === 'avatar' && lastBlindAsl && lastBlindAsl.tokens.length > 0 && (
                   <View style={s.bridgeSignPlayerBox}>
                     <View style={s.bridgeSignPlayerTitleRow}>
                       <Ionicons name="hand-left" size={13} color="#C8FF72" />

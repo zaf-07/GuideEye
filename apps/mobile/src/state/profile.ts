@@ -24,6 +24,7 @@ export interface Profile {
   captions: boolean;
   /** How spoken replies are presented to a signing user. */
   replyFormat: ReplyFormat;
+  signStudioFormat?: 'avatar' | 'cards' | 'digital';
   /** Keep the memory graph on-device only. */
   localOnlyMemory: boolean;
   nearbyDiscovery: boolean;

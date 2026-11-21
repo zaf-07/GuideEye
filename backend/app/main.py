@@ -120,6 +120,7 @@ async def vision_analyze(
     image: UploadFile = File(...),
     question: str = Form('', max_length=300),
     describe: bool = Form(True),
+    use_detector_hints: bool = Form(True),
     remember: bool = Form(False),
     lat: Optional[float] = Form(None),
     lon: Optional[float] = Form(None),
@@ -145,7 +146,7 @@ async def vision_analyze(
         'failed_providers': [],
     }
     if describe:
-        answer = await vision.describe(body, mime, question, detections)
+        answer = await vision.describe(body, mime, question, detections if use_detector_hints else [])
         result.update(description=answer['text'], provider=answer['provider'], failed_providers=answer['failed_providers'])
         if remember and answer['provider'] != 'local':
             place = await navigation.place_name(lat, lon) if lat is not None and lon is not None else ''

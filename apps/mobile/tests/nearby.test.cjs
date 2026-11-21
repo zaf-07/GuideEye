@@ -88,6 +88,30 @@ test('a blind and a deaf phone find each other, both accept, and talk', async ()
   assert.ok(a.sendMessage({ sender_role: 'blind', text: 'Hello', client_id: 'c1', created_at: '2026-11-19T00:00:00Z' }));
   await settle();
   assert.strictEqual(log.right.messages[0].text, 'Hello');
+  assert.strictEqual(log.right.messages[0].sender_role, 'blind');
+  assert.ok(b.sendMessage({ sender_role: 'deaf', text: 'Thank you', client_id: 'c2', created_at: '2026-11-19T00:00:01Z' }));
+  await settle();
+  assert.strictEqual(log.left.messages[0].text, 'Thank you');
+  assert.strictEqual(log.left.messages[0].sender_role, 'deaf');
+});
+
+test('the same nearby pair can leave and accept three fresh conversations', async () => {
+  const { a, b, log } = pair('blind', 'deaf');
+  for (let round = 1; round <= 3; round++) {
+    assert.ok(a.found('b'));
+    await settle();
+    assert.strictEqual(log.left.offers.at(-1).youAccepted, false);
+    assert.strictEqual(log.right.offers.at(-1).youAccepted, false);
+    a.accept();
+    await settle();
+    b.accept();
+    await settle();
+    assert.strictEqual(log.left.matches.length, round);
+    assert.strictEqual(log.right.matches.length, round);
+    a.end();
+    await settle();
+    assert.strictEqual(b.connectedPeer, null);
+  }
 });
 
 test('two phones with the same role disconnect without prompting anyone', async () => {

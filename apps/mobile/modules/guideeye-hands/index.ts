@@ -59,10 +59,10 @@ try {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const core = require('expo-modules-core') as {
     requireNativeModule: (name: string) => NativeModuleShape;
-    requireNativeView: (name: string) => React.ComponentType<HandTrackerProps>;
+    requireNativeViewManager: (name: string) => React.ComponentType<HandTrackerProps>;
   };
   nativeModule = core.requireNativeModule('GuideEyeHands');
-  NativeHandTracker = core.requireNativeView('GuideEyeHands');
+  NativeHandTracker = core.requireNativeViewManager('GuideEyeHands');
 } catch {
   nativeModule = null;
   NativeHandTracker = null;

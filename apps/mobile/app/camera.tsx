@@ -7,6 +7,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import HandTracker, { type SignContextState } from '../components/HandTracker';
+import { HandTracker as NativeHandTracker, hasNativeHandTracking } from '../modules/guideeye-hands';
+import { useNativeHands } from '../src/useNativeHands';
 import LiveSceneMap from '../components/LiveSceneMap';
 import {
   checkWhatChanged,
@@ -180,19 +182,29 @@ export default function CameraScreen() {
     }
   };
   const usesBrowserHandTracking = isSignMode && Platform.OS === 'web';
+  const usesNativeHandTracking = isSignMode && !usesBrowserHandTracking && hasNativeHandTracking();
+  const [nativeSignError, setNativeSignError] = useState('');
+  const nativeHands = useNativeHands({ onWord: setTranslation });
   // CameraView's still-photo API briefly refreshes the iOS preview. Do not run
   // the polling capture loop when there is no consumer for those frames: the
   // previous behavior took an unused photo every 200 ms and made the preview
   // visibly flicker even though detection was unavailable.
   const hasFrameAnalyzer = isSignMode ? hasVisionBackend() : hasLocalDetector() || hasVisionBackend();
-  const visionEnabled = Boolean(permission?.granted) && cameraReady && !usesBrowserHandTracking && hasFrameAnalyzer;
-  const { result: vision, description, state: visionState, detections, cameraCoach, obstacles, blocked, performance, scanNow } = useVisionLoop(
+  const visionEnabled = Boolean(permission?.granted) && cameraReady && !usesBrowserHandTracking && !usesNativeHandTracking && hasFrameAnalyzer;
+  const { result: vision, description, extraObjects, state: visionState, detections, cameraCoach, obstacles, blocked, performance, scanNow } = useVisionLoop(
     cameraRef,
     mode,
     visionEnabled,
   );
   // The cloud model's sentence about the whole scene, kept while it is still current.
   const [sceneSentence, setSceneSentence] = useState('');
+  const [localExpanded, setLocalExpanded] = useState('');
+  useEffect(() => {
+    setLocalExpanded(extraObjects?.text ?? '');
+    if (!extraObjects) return undefined;
+    const expire = setTimeout(() => setLocalExpanded(''), Math.max(0, 4000 - (Date.now() - extraObjects.at)));
+    return () => clearTimeout(expire);
+  }, [extraObjects]);
   useEffect(() => {
     setSceneSentence(description?.text ?? '');
     if (!description) return undefined;
@@ -251,13 +263,13 @@ export default function CameraScreen() {
     }));
   const current: AssistFrame = vision || detections.length ? {
     title: vision?.summary || localSummary,
-    detail: sceneSentence
+    detail: localExpanded || sceneSentence
       || (vision?.kind === 'objects' ? 'Detected on this phone. Ask “Guide, what is in front of me?” for more.' : vision?.speech)
       || 'Real-time spatial tracker running privately on this device.',
-    // Asked to repeat, say what is known: the named objects first, then the fuller sentence.
-    speech: [vision?.kind === 'empty' ? '' : vision?.speech || localSummary, sceneSentence && sceneSentence !== vision?.speech ? sceneSentence : '']
-      .filter(Boolean)
-      .join(' ') || vision?.speech || localSummary,
+    // Prefer the image-based description for a repeat, while keeping urgent local warnings.
+    speech: vision?.urgency === 'high' || vision?.kind === 'blocked'
+      ? vision.speech
+      : localExpanded || sceneSentence || vision?.speech || localSummary,
     icon: mode === 'sign' ? 'hand-left' : vision?.urgency === 'high' ? 'warning' : 'navigate',
     // Prefer server YOLO boxes when supplied: they are the detections paired
     // with metric depth. Keep local YOLOX as a fast offline fallback.
@@ -342,9 +354,13 @@ export default function CameraScreen() {
 
   const signHeading = usesBrowserHandTracking
     ? browserSignHeading
+    : usesNativeHandTracking
+      ? translation || nativeHands.asl?.spelledText || 'Show your hands to the camera'
     : vision?.summary || (visionState === 'offline' ? 'Sign interpretation is reconnecting…' : 'Looking for a signed message…');
   const signDetail = usesBrowserHandTracking
     ? browserSignDetail
+    : usesNativeHandTracking
+      ? nativeSignError || (nativeHands.handCount ? 'Hands detected · on-device ASL' : 'Keep your hands in the camera frame.')
     : vision?.should_speak && vision.speech
       ? `${vision.speech} · Not spoken yet. Tap Speak if this is what you signed.`
       : vision?.speech || 'Keep both hands clearly in the camera frame.';
@@ -372,6 +388,12 @@ export default function CameraScreen() {
   };
 
   const restartContextCapture = () => {
+    if (usesNativeHandTracking) {
+      nativeHands.reset();
+      setTranslation('');
+      setSpokenTranslation('');
+      return;
+    }
     if (!usesBrowserHandTracking) {
       scanNow();
       return;
@@ -549,6 +571,16 @@ export default function CameraScreen() {
     );
     if (text) narrate(text, { rate: profile.speechRate || 1 });
   }, [isSignMode, speaking, description]);
+
+  useEffect(() => {
+    if (isSignMode || !speaking || !extraObjects) return;
+    const text = narrator.current.offer(
+      { key: extraObjects.key, text: extraObjects.text, kind: 'description' },
+      Date.now(),
+      narrationBusy(),
+    );
+    if (text) narrate(text, { rate: profile.speechRate || 1 });
+  }, [isSignMode, speaking, extraObjects]);
 
   // Feed the utterance controller: on every tracker update, and on a timer so
   // a sentence still ends when nothing on screen changes.
@@ -744,6 +776,9 @@ export default function CameraScreen() {
           onContextChange={setSignContext}
           onContextCaptured={interpretLiveContext}
         />
+      ) : usesNativeHandTracking ? (
+        <NativeHandTracker style={StyleSheet.absoluteFill} active facing="back" onHands={nativeHands.onHands}
+          onStatus={({ nativeEvent }) => setNativeSignError(nativeEvent.state === 'running' ? '' : nativeEvent.detail || 'Sign camera unavailable.')} />
       ) : (
         <>
           <CameraView
@@ -775,7 +810,7 @@ export default function CameraScreen() {
           <View style={c.modeIndicator}>
             <View style={c.greenDot} />
             <Text style={c.modeText}>
-              {usesBrowserHandTracking
+              {usesBrowserHandTracking || usesNativeHandTracking
                 ? 'ON-DEVICE ASL · OFFLINE READY'
                 : visionState === 'offline'
                   ? 'ON-DEVICE VISION · OFFLINE READY'
@@ -1062,7 +1097,7 @@ export default function CameraScreen() {
                   accessibilityLabel={isSignMode ? 'Speak translation' : 'Repeat description'}
                   onPress={() => {
                     if (isSignMode && translation) setSpokenTranslation(translation);
-                    speak(translation || current.speech);
+                    speak(translation || (usesNativeHandTracking ? nativeHands.asl?.spelledText || '' : current.speech));
                   }}
                   style={c.speak}
                 >

@@ -15,6 +15,10 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import SignPlayer from '../components/SignPlayer';
+import FingerspellingCards from '../components/FingerspellingCards';
+import DigitalSigner from '../components/DigitalSigner';
+import { Chip } from '../src/components';
+import { useProfile } from '../src/state/ProfileContext';
 import {
   translateEnglishToASLGloss,
   translateEnglishToSign,
@@ -30,10 +34,12 @@ const PRESET_PHRASES = [
   'I need water',
   'Wait a moment',
   'Yes, I understand',
-  'SFBU DGX Spark',
 ];
 
 export default function TranslateScreen() {
+  const { profile, patch } = useProfile();
+  const showCards = profile.signStudioFormat === 'cards';
+  const showDigital = profile.signStudioFormat === 'digital';
   const [inputText, setInputText] = useState('Where is Room 204?');
   const [result, setResult] = useState<ASLTranslationResult>(() =>
     translateEnglishToASLGloss('Where is Room 204?'),
@@ -318,13 +324,27 @@ export default function TranslateScreen() {
             </View>
           </View>
 
-          {/* Interactive Skeletal Sign Player */}
+          <View style={s.aslGlossCard}>
+            <Text style={s.aslGlossHeaderTitle}>ORIGINAL TEXT</Text>
+            <Text style={s.glossSentence} accessibilityLiveRegion="polite">{result.originalText}</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
+              <Chip label="Sign cards" active={showCards} onPress={() => patch({ signStudioFormat: 'cards' })} />
+              <Chip label="Skeleton hands" active={!showCards && !showDigital} onPress={() => patch({ signStudioFormat: 'avatar' })} />
+              <Chip label="3D avatar" active={showDigital} onPress={() => patch({ signStudioFormat: 'digital' })} />
+            </View>
+          </View>
+
           <View style={s.playerCard}>
-            <SignPlayer tokens={result.tokens} autoPlay={true} height={340} />
+            {showDigital ? <DigitalSigner key={result.originalText} text={result.originalText} /> : showCards ? (
+              <View style={{ gap: 12, padding: 12 }}>
+                <Text style={s.aslGlossHeaderTitle}>FINGERSPELLING</Text>
+                <FingerspellingCards text={result.originalText} />
+              </View>
+            ) : <SignPlayer key={result.originalText} tokens={result.tokens} autoPlay height={340} />}
           </View>
 
           {/* 3D WebGL PBR Hand & Linguistic Guide Info */}
-          <View style={s.legendCard}>
+          {!showCards && !showDigital && Platform.OS === 'web' && <View style={s.legendCard}>
             <View style={s.avatarBadgeRow}>
               <View style={s.avatarActivePill}>
                 <Ionicons name="cube" size={13} color="#07110F" />
@@ -352,7 +372,7 @@ export default function TranslateScreen() {
                 <Text style={s.legendText}>Physical Trajectory Guide</Text>
               </View>
             </View>
-          </View>
+          </View>}
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>

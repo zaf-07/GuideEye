@@ -42,12 +42,13 @@ export function useNearby(enabled: boolean, role: NearbyRole | null, paused: boo
   const pausedRef = useRef(paused);
   const busyRef = useRef(busy);
   const handled = useRef(new Set<string>());
+  const wasBusy = useRef(busy);
   pausedRef.current = paused;
   busyRef.current = busy;
 
-  const offerMatch = useCallback((next: NearbyMatch) => {
-    if (handled.current.has(next.code)) return;
-    handled.current.add(next.code);
+  const offerMatch = useCallback((next: NearbyMatch, direct = false) => {
+    if (!direct && handled.current.has(next.code)) return;
+    if (!direct) handled.current.add(next.code);
     setFromCloud(null);
     setFromPeer(null);
     setMatch(next);
@@ -61,12 +62,28 @@ export function useNearby(enabled: boolean, role: NearbyRole | null, paused: boo
   useEffect(() => {
     if (!enabled || !role) return undefined;
     const name = newPeerName();
+    const nearby = new Set<string>();
+    const inviteAfter = new Map<string, number>();
     let peer: PeerLink | null = null;
+    const discover = () => {
+      if (!peer || peer.connectedPeer || pausedRef.current || busyRef.current || AppState.currentState !== 'active') return;
+      const now = Date.now();
+      for (const id of nearby) {
+        if (name >= id || (inviteAfter.get(id) ?? 0) > now) continue;
+        if (peer.found(id)) {
+          inviteAfter.set(id, now + 22000);
+          break;
+        }
+      }
+    };
     const transport = startMultipeer(name, {
-      found: (id) => { if (!pausedRef.current) peer?.found(id); },
-      lost: () => {},
+      found: (id) => { nearby.add(id); discover(); },
+      lost: (id) => { nearby.delete(id); inviteAfter.delete(id); },
       connected: (id) => peer?.connected(id),
-      disconnected: (id) => peer?.disconnected(id),
+      disconnected: (id) => {
+        peer?.disconnected(id);
+        inviteAfter.set(id, Date.now() + 3000);
+      },
       message: (id, text) => peer?.received(id, text),
     });
     if (!transport) return undefined;
@@ -74,14 +91,17 @@ export function useNearby(enabled: boolean, role: NearbyRole | null, paused: boo
       onOffer: (offer) => setFromPeer(pausedRef.current && !offer?.youAccepted ? null : offer),
       onMatch: (next) => {
         openPeerBridge(next.code, (message) => peer?.sendMessage(message) ?? false);
-        offerMatch(next);
+        offerMatch(next, true);
       },
       onBeacon: (beacon) => { peerBeacon.current = beacon; },
       onMessage: receivePeerMessage,
       onPartner: setPeerPartner,
     }, () => !cloudHealthy.current);
     link.current = peer;
+    discover();
+    const retry = setInterval(discover, 3000);
     return () => {
+      clearInterval(retry);
       link.current = null;
       peer?.end();
       transport.stop();
@@ -91,10 +111,16 @@ export function useNearby(enabled: boolean, role: NearbyRole | null, paused: boo
   }, [enabled, role, offerMatch]);
 
   useEffect(() => {
-    if (paused || !link.current?.isMatched) return;
-    link.current.end();
-    closePeerBridge();
-  }, [paused]);
+    const leftConversation = wasBusy.current && !busy;
+    wasBusy.current = busy;
+    if (leftConversation) {
+      link.current?.end();
+      peerBeacon.current = null;
+      closePeerBridge();
+      setFromPeer(null);
+      setFromCloud(null);
+    }
+  }, [busy]);
 
   useEffect(() => {
     if (!enabled || !role || paused) return undefined;
@@ -143,7 +169,7 @@ export function useNearby(enabled: boolean, role: NearbyRole | null, paused: boo
             failures = 0;
             cloudHealthy.current = true;
             waitSeconds = state.heartbeat_every_s || 5;
-            applyCloud(state);
+            if (!busyRef.current && appActive) applyCloud(state);
           } catch {
             failures += 1;
             if (failures >= CLOUD_FAILURES_BEFORE_PEER) {

@@ -164,6 +164,12 @@ NAV_NEXT = re.compile(
 NAV_STOP = re.compile(r'\b(stop|cancel|end) (the )?(navigation|directions|route|guiding)\b')
 GO_BACK = re.compile(r'\b(take|guide|walk|lead|bring) me back\b|\bway back\b|\bgo back to (the )?start\b')
 READ = re.compile(r'\bread\b|\bwhat does (it|that|this|the) .*\bsay\b|\bwhat is written\b')
+OBJECT_SEARCH = re.compile(
+    r"^(?:please\s+)?(?:look for|find|locate|can you see|where(?:'s| is| are))\s+"
+    r"(?:(?P<explicit>.+?)\s+(?:in (?:the |this |my )?(?:camera(?: view)?|frame)|in view)"
+    r"|(?P<fixture>(?:(?:a|an|the|any)\s+)?(?:doors?|doorways?|stairs|staircase|light switches?|outlets?|sockets?)))"
+    r"[.!?]*$", re.IGNORECASE,
+)
 READ_QUESTION = (
     'Read aloud every piece of text you can see in this image, word for word, starting with the largest. '
     'Say only the text itself. If there is no readable text, say that you cannot see any text.'
@@ -372,6 +378,8 @@ def route(text: str, has_pending: bool = False, navigating: bool = False) -> str
         if NO.search(value):
             return 'pay_cancel'
         return 'pay_waiting'
+    if OBJECT_SEARCH.fullmatch(value):
+        return 'object_search'
     if FORGET.search(value):
         return 'forget'
     if CONTACT_ADD.search(value):
@@ -1347,7 +1355,19 @@ class Assistant:
                 reply.update(say='I could not make out what is in view, so I did not save it. Hold the camera steady and ask again.',
                              provider=note['provider'])
             return
-        if READ.search(text.lower()):
+        if intent == 'object_search':
+            match = OBJECT_SEARCH.fullmatch(text.strip())
+            target = (match['explicit'] or match['fixture']) if match else text
+            answer = await vision.describe(
+                image, mime,
+                f'Look for {target!r} in this frame. If clearly visible, describe its position '
+                'in the image. Otherwise say you cannot see it in this frame. '
+                'Do not guess distance or whether the path is safe.',
+                [],
+            )
+            if answer['provider'] == 'local':
+                answer['text'] = 'The expanded camera search is unavailable right now.'
+        elif READ.search(text.lower()):
             # Reading is a different job from describing: ask for the words only, with no object
             # hints, and keep the picture large enough for small print.
             answer = await vision.describe(image, mime, READ_QUESTION, [], max_side=vision.MAX_FRAME_SIDE)

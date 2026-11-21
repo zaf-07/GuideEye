@@ -6,6 +6,7 @@ import { RefObject, useCallback, useEffect, useRef, useState } from 'react';
 import { detectObjects, detectVideoFrame, localDetectorBackend, warmUpDetector } from './detector';
 import type { DetectionResult, LocalDetection } from './detector.types';
 import type { BlockedView } from './blockedView';
+import { classifyExtraObjects, expandedLabelsAvailable } from './objectLabels';
 
 /** Directions the local camera frame looks blocked in, and when it was seen. */
 export type BlockedFrame = BlockedView & { at: number };
@@ -128,6 +129,9 @@ const LOCAL_SCAN_INTERVAL_MS = 120;
 // new one soon after the scene changes, otherwise only now and then.
 const CLOUD_CHANGE_GAP_MS = 5000;
 const CLOUD_REFRESH_MS = 20000;
+const EXPANDED_SCENE_QUESTION =
+  'Name the most prominent clearly visible objects and their positions in the image, including everyday objects such as shoes, keys, doors and stairs. ' +
+  'Identify them from the image itself. If an object is unclear, omit it. Never infer distance or whether a path is safe.';
 // With no on-device detector the cloud is the only pair of eyes, so it is
 // asked steadily, but never back to back.
 const CLOUD_ONLY_GAP_MS = 6000;
@@ -264,6 +268,10 @@ async function analyzeScene(uri: string, describe: boolean, signal: AbortSignal)
   const data = new FormData();
   await appendFrame(data, 'image', uri, 'frame.jpg');
   data.append('describe', describe ? 'true' : 'false');
+  if (describe) {
+    data.append('question', EXPANDED_SCENE_QUESTION);
+    data.append('use_detector_hints', 'false');
+  }
   let response: Response;
   try {
     response = await fetch(`${apiUrl}/vision/analyze`, { method: 'POST', body: data, signal });
@@ -328,8 +336,8 @@ async function analyzeFrame(uri: string, mode: AssistMode, previousSceneKey: str
   // its own detector. With no detections that sentence is only "I do not
   // recognise anything", which is a failure report, not a description.
   const fromModel = Boolean(analysis.provider) && analysis.provider !== 'local';
-  const speech = fromModel || analysis.detections.length ? (analysis.description || '').trim() : '';
-  const key = sceneKeyFor(analysis);
+  const speech = fromModel ? (analysis.description || '').trim() : '';
+  const key = sceneKeyFor(fromModel ? { ...analysis, detector: 'disabled', detections: [] } : analysis);
   return {
     summary: speech.split(/(?<=[.!?])\s+/)[0].slice(0, 100),
     speech: speech.slice(0, 240),
@@ -608,6 +616,9 @@ export function trackFrameFile(uri: string | null | undefined) {
 export function useVisionLoop(camera: RefObject<CameraView | null>, mode: AssistMode, enabled: boolean) {
   const [result, setResult] = useState<VisionResult | null>(null);
   const [description, setDescription] = useState<SceneDescription | null>(null);
+  const [extraObjects, setExtraObjects] = useState<SceneDescription | null>(null);
+  const extraInFlight = useRef(false);
+  const lastExtraAt = useRef(0);
   const [state, setState] = useState<VisionState>('starting');
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const [detections, setDetections] = useState<LocalDetection[]>([]);
@@ -787,6 +798,24 @@ export function useVisionLoop(camera: RefObject<CameraView | null>, mode: Assist
       failures.current = 0;
       setState('live');
 
+      // Reuse the captured image and publish local boxes first. The secondary
+      // classifier runs independently and never queues up work behind itself.
+      if (expandedLabelsAvailable && !extraInFlight.current && !isAssistantBusy() && now - lastExtraAt.current >= 2000) {
+        extraInFlight.current = true;
+        lastExtraAt.current = now;
+        void classifyExtraObjects(picture.uri)
+          .then((labels) => {
+            if (generation.current !== runGeneration || Date.now() - capturedAt > 2500) return;
+            setExtraObjects(labels.length ? {
+              text: `In view: ${labels.join(', ')}.`,
+              key: `extra:${labels.join('|')}`,
+              at: capturedAt,
+            } : null);
+          })
+          .catch(() => {})
+          .finally(() => { extraInFlight.current = false; });
+      }
+
       // Geometry has its own API path and cadence. It can update tracked boxes
       // while the cloud model is describing an earlier frame; it never creates
       // a spoken collision warning in the client.
@@ -843,6 +872,7 @@ export function useVisionLoop(camera: RefObject<CameraView | null>, mode: Assist
       }
 
       if (cloudIsDue(now, local.available)) {
+        const requestedSignature = localSignature.current;
         const cloudController = new AbortController();
         controller.current = cloudController;
         cloudInFlight.current = true;
@@ -851,6 +881,7 @@ export function useVisionLoop(camera: RefObject<CameraView | null>, mode: Assist
         void analyzeFrame(picture.uri, mode, descriptionKey.current, cloudController.signal)
           .then((next) => {
             if (cloudController.signal.aborted || runGeneration !== generation.current) return;
+            if (local.available && requestedSignature !== localSignature.current) return;
             if (!next.speech) {
               // The server could not get a sentence from its model. Try again
               // later instead of showing its "nothing recognised" filler.
@@ -989,6 +1020,8 @@ export function useVisionLoop(camera: RefObject<CameraView | null>, mode: Assist
     failures.current = 0;
     setResult(null);
     setDescription(null);
+    setExtraObjects(null);
+    lastExtraAt.current = 0;
     setCameraCoach(null);
     trackedSnapshot.current = null;
     setObstacles(null);
@@ -1000,10 +1033,13 @@ export function useVisionLoop(camera: RefObject<CameraView | null>, mode: Assist
     }
     const current = generation.current;
     timer.current = setTimeout(() => void run(current), 350);
-    return stop;
+    return () => {
+      generation.current += 1;
+      stop();
+    };
   }, [enabled, mode, run, stop]);
 
-  return { result, description, state, lastUpdated, detections, cameraCoach, obstacles, blocked, performance, scanNow };
+  return { result, description, extraObjects, state, lastUpdated, detections, cameraCoach, obstacles, blocked, performance, scanNow };
 }
 
 function performanceNow() {

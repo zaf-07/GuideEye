@@ -132,6 +132,17 @@ class RadarTests(unittest.TestCase):
             self.radar.heartbeat('a', 'blind', *HALL)
             self.assertIsNone(self.radar.heartbeat('b', 'deaf', *SAME_ROOM)['offer'])
 
+    def test_a_matched_pair_can_reconnect_after_both_leave_radar(self):
+        self.radar.heartbeat('a', 'blind', *HALL)
+        offer = self.radar.heartbeat('b', 'deaf', *SAME_ROOM)['offer']
+        self.radar.respond('a', offer['offer_id'], True)
+        self.radar.respond('b', offer['offer_id'], True)
+        self.radar.leave('a')
+        self.radar.leave('b')
+        self.radar.heartbeat('a', 'blind', *HALL)
+        again = self.radar.heartbeat('b', 'deaf', *SAME_ROOM)['offer']
+        self.assertNotEqual(again['offer_id'], offer['offer_id'])
+
     def test_an_unanswered_offer_is_not_repeated_at_once(self):
         self.radar.heartbeat('a', 'blind', *HALL)
         first = self.radar.heartbeat('b', 'deaf', *SAME_ROOM)['offer']

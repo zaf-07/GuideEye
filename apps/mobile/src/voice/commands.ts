@@ -104,7 +104,7 @@ const AMOUNT = "((?:\\d+(?:\\.\\d+)?|half an?|[a-z]+(?:[ -][a-z]+)?))\\s+(second
 const DELAY_PREFIX = new RegExp(`^(?:in|after)\\s+${AMOUNT}[\\s,]+(?:please\\s+)?(.+)$`, 'i');
 const DELAY_SUFFIX = new RegExp(`^(.+?)[\\s,]+(?:in|after)\\s+${AMOUNT}[\\s.!?]*$`, 'i');
 const TIMER_WORDS = /\b(remind|reminder|timer|alarm)\b/i;
-const MOVE = /^(?:please )?(?:(?:take|guide|walk|navigate|lead|bring|get) me\b|(?:go|head|navigate)\s+(?:to|home)\b|let'?s go\b|we(?:'re| are) going\b)/i;
+const MOVE = /^(?:please )?(?:(?:take|guide|walk|navigate|lead|bring|get) me\b|(?:go|head|navigate)\s+(?:to|home)\b|let'?s go\b|(?:i(?:['’]m| am)|we(?:['’]re| are)) (?:going|heading) (?:to\b|home\b))/i;
 const MAX_DELAY_SECONDS = 12 * 3600;
 
 function delayed(amount: string, unit: string, command: string): Delayed | null {
@@ -113,7 +113,8 @@ function delayed(amount: string, unit: string, command: string): Delayed | null 
   if (count === null || count <= 0 || !rest) return null;
   const seconds = Math.round(count * UNIT_SECONDS[unit.toLowerCase()]);
   if (seconds < 1 || seconds > MAX_DELAY_SECONDS) return null;
-  return { seconds, command: rest };
+  const destination = /^(?:i(?:['’]m| am)|we(?:['’]re| are)) (?:going|heading) to (.+)$/i.exec(rest);
+  return { seconds, command: destination ? `take me to ${destination[1]}` : rest };
 }
 
 export function parseDelay(text: string): Delayed | null {

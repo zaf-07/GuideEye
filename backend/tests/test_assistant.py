@@ -203,6 +203,18 @@ class AssistantTests(NoCloud):
     def test_seeing_needs_a_camera_frame(self):
         self.assertIn('camera', run(self.make().respond('s', "What's in front of me?"))['say'])
 
+    def test_expanded_object_search_uses_a_frame_and_reports_unavailability(self):
+        assistant = self.make([det('chair', 0.2, 0.5)])
+        self.assertIn('camera', run(assistant.respond('s', 'Where is the door?'))['say'])
+        offline = run(assistant.respond('s', 'Where is the door?', b'frame'))
+        self.assertEqual(offline['intent'], 'object_search')
+        self.assertIn('unavailable', offline['say'])
+        with mock.patch.object(vision, 'describe', return_value={'text': 'The door is on the left.', 'provider': 'gemini'}) as describe:
+            reply = run(assistant.respond('s', 'Where is the door?', b'frame'))
+        self.assertEqual(reply['say'], 'The door is on the left.')
+        self.assertIn('the door', describe.call_args.args[2])
+        self.assertEqual(describe.call_args.args[3], [])
+
     def test_call_requires_confirmation_and_returns_dial_url(self):
         assistant = self.make()
         self.memory.add_contact('Alex', '+14155550111')

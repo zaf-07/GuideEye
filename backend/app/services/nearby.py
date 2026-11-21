@@ -14,12 +14,12 @@ RADAR_RADIUS_M = float(os.getenv('RADAR_RADIUS_M', '50'))
 PRESENCE_TTL_S = 20
 OFFER_TTL_S = 30
 MATCH_TTL_S = 60
+MATCH_COOLDOWN_S = float(os.getenv('RADAR_MATCH_COOLDOWN_S', '300'))
 # After "Not now" the same two people are left alone for a while. Ten minutes
 # made one stray tap, or one misheard word, look like the feature had died.
 DECLINE_COOLDOWN_S = float(os.getenv('RADAR_DECLINE_COOLDOWN_S', '120'))
 # Two people who just connected are in a conversation: asking them again a
 # minute later put the prompt on top of the conversation they were having.
-MATCH_COOLDOWN_S = float(os.getenv('RADAR_MATCH_COOLDOWN_S', '300'))
 # An offer nobody answered is not repeated straight away.
 EXPIRED_COOLDOWN_S = float(os.getenv('RADAR_EXPIRED_COOLDOWN_S', '60'))
 HEARTBEAT_EVERY_S = 5
@@ -176,6 +176,7 @@ class Radar:
         self._present: dict[str, dict] = {}
         self._offers: dict[str, dict] = {}
         self._matches: dict[str, dict] = {}
+        self._recent_matches: dict[frozenset[str], float] = {}
         self._cooldown: dict[frozenset, float] = {}
         self._listeners: list = []
 
@@ -197,6 +198,8 @@ class Radar:
             del self._matches[device]
         for pair in [p for p, until in self._cooldown.items() if until <= now]:
             del self._cooldown[pair]
+        for pair in [p for p, until in self._recent_matches.items() if until <= now]:
+            del self._recent_matches[pair]
 
     def _close(self, offer: dict, reason: str) -> None:
         self._offers.pop(offer['id'], None)
@@ -228,7 +231,8 @@ class Radar:
         for other, there in self._present.items():
             if other == device or there['role'] != PARTNER_ROLE[me['role']]:
                 continue
-            if self._offer_for(other) or other in self._matches or frozenset((device, other)) in self._cooldown:
+            pair = frozenset((device, other))
+            if self._offer_for(other) or other in self._matches or pair in self._cooldown or pair in self._recent_matches:
                 continue
             gap = self._near(me, there)
             if gap is not None and (best is None or gap < best[1]):
@@ -281,7 +285,7 @@ class Radar:
             self._emit(partner, {'event': 'offer_update', **self._offer_view(offer, partner)})
             return self.state(device)
         self._offers.pop(offer['id'], None)
-        self._cooldown[frozenset(offer['devices'])] = self._clock() + MATCH_COOLDOWN_S
+        self._recent_matches[frozenset(offer['devices'])] = self._clock() + MATCH_COOLDOWN_S
         room = self._rooms.create(device, partner)
         for member in offer['devices']:
             role = self._present.get(member, {}).get('role', 'blind')
@@ -293,6 +297,9 @@ class Radar:
     def leave(self, device: str) -> None:
         self._present.pop(device, None)
         self._matches.pop(device, None)
+        for pair in list(self._recent_matches):
+            if device in pair and all(member not in self._present for member in pair):
+                del self._recent_matches[pair]
         offer = self._offer_for(device)
         if offer is not None:
             self._close(offer, 'expired')
